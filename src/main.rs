@@ -3,6 +3,7 @@ extern crate pest;
 extern crate pest_derive;
 
 use pest::iterators::Pair;
+use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
 use std::fs;
 
@@ -24,14 +25,29 @@ struct Decl {
 }
 
 fn parse_expr(pair: Pair<Rule>) {
-    println!("expr begin");
-    for pair in pair.into_inner() {
-        match pair.as_rule() {
-            Rule::expr => parse_expr(pair),
-            _ => println!("{:?}: {:?}", pair.as_rule(), pair.as_str()),
-        }
-    }
-    println!("expr end");
+    let pratt = PrattParser::new()
+        .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
+        .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
+        .op(Op::infix(Rule::pow, Assoc::Right))
+        .op(Op::postfix(Rule::fac))
+        .op(Op::prefix(Rule::neg));
+
+    pratt
+        .map_primary(|primary| match primary.as_rule() {
+            Rule::int => println!("int: {:?}", primary.as_str()),
+            Rule::expr => parse_expr(primary),
+            _ => println!("primary: {:?}", primary.as_str()),
+        })
+        .map_prefix(|op, _rhs| match op.as_rule() {
+            _ => println!("prefix: {:?} {:?}", op.as_rule(), op.as_str()),
+        })
+        .map_postfix(|_lhs, op| match op.as_rule() {
+            _ => println!("postfix: {:?} {:?}", op.as_rule(), op.as_str()),
+        })
+        .map_infix(|_lhs, op, _rhs| match op.as_rule() {
+            _ => println!("infix: {:?} {:?}", op.as_rule(), op.as_str()),
+        })
+        .parse(pair.into_inner());
 }
 
 fn parse_decl(pair: Pair<Rule>) -> Decl {
