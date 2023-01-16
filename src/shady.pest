@@ -15,11 +15,16 @@ decl = {
     (!infix ~ fn_name ~ parameter*) |
     (infix ~ fn_name ~ parameter{2})
   )
-  ~ "=" ~ expr }
+  ~ "=" ~ expr
+}
+
+fn_call = { fn_name ~ expr* }
 
 expr = {
-  prefix_op* ~ primary ~ postfix_op*
-  ~ (infix_op ~ prefix_op* ~ primary ~ postfix_op* )*
+  (
+  (prefix_op* ~ primary ~ postfix_op*
+  ~ (infix_op ~ prefix_op* ~ primary ~ postfix_op* )*))
+  | fn_call
 }
 primary = _{ value | "(" ~ expr ~ ")" }
 value = _{ int | str }

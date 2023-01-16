@@ -24,6 +24,15 @@ struct Decl {
     parameters: Vec<String>,
 }
 
+fn parse_call(pair: Pair<Rule>) {
+    for pair in pair.into_inner() {
+        match pair.as_rule() {
+            Rule::fn_name => println!("calling {:?}", pair.as_str()),
+            _ => println!("    {:?}: {:?}", pair.as_rule(), pair.as_str()),
+        }
+    }
+}
+
 fn parse_expr(pair: Pair<Rule>) {
     let pratt = PrattParser::new()
         .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
@@ -36,7 +45,8 @@ fn parse_expr(pair: Pair<Rule>) {
         .map_primary(|primary| match primary.as_rule() {
             Rule::int => println!("int: {:?}", primary.as_str()),
             Rule::expr => parse_expr(primary),
-            _ => println!("primary: {:?}", primary.as_str()),
+            Rule::fn_call => parse_call(primary),
+            _ => println!("primary: {:?} {:?}", primary.as_rule(), primary.as_str()),
         })
         .map_prefix(|op, _rhs| match op.as_rule() {
             _ => println!("prefix: {:?} {:?}", op.as_rule(), op.as_str()),
