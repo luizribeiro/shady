@@ -7,7 +7,7 @@ token = @{ ASCII_ALPHA+ }
 public = @{ "public" }
 infix = @{ "infix" }
 fn_name = @{ token }
-parameter = @{ token }
+parameter = @{ "$" ~ token }
 
 decl = {
   public?
@@ -18,7 +18,10 @@ decl = {
   ~ "=" ~ expr
 }
 
-fn_call = { fn_name ~ expr* }
+
+fn_call = { fn_name ~ fn_arg* }
+fn_arg = { expr | unquoted_str_arg }
+unquoted_str_arg = @{ ASCII_ALPHANUMERIC+ }
 
 expr = {
   (
@@ -26,7 +29,8 @@ expr = {
   ~ (infix_op ~ prefix_op* ~ primary ~ postfix_op* )*))
   | fn_call
 }
-primary = _{ value | "(" ~ expr ~ ")" }
+primary = _{ variable | value | "(" ~ expr ~ ")" }
+variable = @{ "$" ~ token }
 value = _{ int | str }
 
 infix_op =  _{ add | sub | mul | div | pow }

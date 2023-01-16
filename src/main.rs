@@ -28,6 +28,7 @@ fn parse_call(pair: Pair<Rule>) {
     for pair in pair.into_inner() {
         match pair.as_rule() {
             Rule::fn_name => println!("calling {:?}", pair.as_str()),
+            Rule::expr => parse_expr(pair),
             _ => println!("    {:?}: {:?}", pair.as_rule(), pair.as_str()),
         }
     }

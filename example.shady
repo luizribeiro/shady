@@ -1,1 +1,3 @@
 public main = foobar (2 + 2) (stdout (ls));
+
+restart $service = sudo systemctl restart $service;
