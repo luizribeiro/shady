@@ -1,5 +1,1 @@
-pub foo = (42 - 2) + 42!;
-infix mul a b = 2;
-infix + a b = 2;
-
-pub main a b = 42 + 42;
+public main a b = 42 + 42;

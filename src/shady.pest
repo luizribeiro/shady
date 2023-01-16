@@ -4,11 +4,15 @@ program = { SOI ~ (decl ~ ";")* ~ EOI }
 
 token = @{ ASCII_ALPHA+ }
 
+public = @{ "public" }
+fn_name = @{ token }
+parameter = @{ token }
+
 decl = {
-  "pub"?
+  public?
   ~ (
-    (!"infix" ~ token+) |
-    ("infix" ~ (token | SYMBOL) ~ token{2})
+    (!"infix" ~ fn_name ~ parameter*) |
+    ("infix" ~ fn_name ~ parameter{2})
   )
   ~ "=" ~ expr }
 
