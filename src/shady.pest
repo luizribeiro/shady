@@ -1,6 +1,16 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
-program = { SOI ~ (expr ~ ";")* ~ EOI }
+program = { SOI ~ (decl ~ ";")* ~ EOI }
+
+token = @{ ASCII_ALPHA+ }
+
+decl = {
+  "pub"?
+  ~ (
+    (!"infix" ~ token+) |
+    ("infix" ~ (token | SYMBOL) ~ token{2})
+  )
+  ~ "=" ~ expr }
 
 expr = {
   prefix* ~ primary ~ postfix*
@@ -22,5 +32,14 @@ fac = { "!" }
 
 primary = _{ value | "(" ~ expr ~ ")" }
 
-value = _{ int }
+value = _{ int | str }
+
 int = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT+ | ASCII_DIGIT }
+
+str = ${ "\"" ~ inner ~ "\"" }
+inner = @{ char* }
+char = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
