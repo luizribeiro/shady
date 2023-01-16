@@ -5,38 +5,37 @@ program = { SOI ~ (decl ~ ";")* ~ EOI }
 token = @{ ASCII_ALPHA+ }
 
 public = @{ "public" }
+infix = @{ "infix" }
 fn_name = @{ token }
 parameter = @{ token }
 
 decl = {
   public?
   ~ (
-    (!"infix" ~ fn_name ~ parameter*) |
-    ("infix" ~ fn_name ~ parameter{2})
+    (!infix ~ fn_name ~ parameter*) |
+    (infix ~ fn_name ~ parameter{2})
   )
   ~ "=" ~ expr }
 
 expr = {
-  prefix* ~ primary ~ postfix*
-  ~ (infix ~ prefix* ~ primary ~ postfix* )*
+  prefix_op* ~ primary ~ postfix_op*
+  ~ (infix_op ~ prefix_op* ~ primary ~ postfix_op* )*
 }
+primary = _{ value | "(" ~ expr ~ ")" }
+value = _{ int | str }
 
-infix =  _{ add | sub | mul | div | pow }
+infix_op =  _{ add | sub | mul | div | pow }
 add = { "+" }
 sub = { "-" }
 mul = { "*" }
 div = { "/" }
 pow = { "^" }
 
-prefix = _{ neg }
+prefix_op = _{ neg }
 neg = { "-" }
 
-postfix = _{ fac }
+postfix_op = _{ fac }
 fac = { "!" }
-
-primary = _{ value | "(" ~ expr ~ ")" }
-
-value = _{ int | str }
 
 int = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT+ | ASCII_DIGIT }
 
