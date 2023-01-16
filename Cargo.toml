@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 pest = "2.5.3"
+pest_derive = "2.5.3"
