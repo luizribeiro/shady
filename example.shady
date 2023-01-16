@@ -1,1 +1,1 @@
-public infix main a b = 42 + 42;
+public main = (42 + 42) * 2;

@@ -23,6 +23,17 @@ struct Decl {
     parameters: Vec<String>,
 }
 
+fn parse_expr(pair: Pair<Rule>) {
+    println!("expr begin");
+    for pair in pair.into_inner() {
+        match pair.as_rule() {
+            Rule::expr => parse_expr(pair),
+            _ => println!("{:?}: {:?}", pair.as_rule(), pair.as_str()),
+        }
+    }
+    println!("expr end");
+}
+
 fn parse_decl(pair: Pair<Rule>) -> Decl {
     let mut is_public = false;
     let mut is_infix = false;
@@ -35,7 +46,8 @@ fn parse_decl(pair: Pair<Rule>) -> Decl {
             Rule::infix => is_infix = true,
             Rule::fn_name => fn_name = Some(pair.as_str().to_string()),
             Rule::parameter => parameters.push(pair.as_str().to_string()),
-            _ => println!("  {:?}: {:?}", pair.as_rule(), pair.as_str()),
+            Rule::expr => parse_expr(pair),
+            _ => unreachable!(),
         };
     }
 
@@ -52,8 +64,10 @@ fn parse_program(pair: Pair<Rule>) -> Program {
     let pairs = pair.into_inner();
 
     for pair in pairs {
-        if pair.as_rule() == Rule::decl {
-            decls.push(parse_decl(pair));
+        match pair.as_rule() {
+            Rule::decl => decls.push(parse_decl(pair)),
+            Rule::EOI => (),
+            _ => unreachable!(),
         }
     }
 
