@@ -2,35 +2,24 @@ extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 
+mod args;
 mod ast;
 
-fn print_usage(context: ShadyContext) {
-    println!("Usage: shady {}", context.args.filename);
-    for fun in context.program.fn_definitions {
-        let signature = &fun.signature;
-        if !signature.is_public {
-            continue;
-        }
-        print!("{}", signature.fn_name);
-        for param in &signature.parameters {
-            print!(" <{}>", param[1..].to_uppercase());
-        }
-        println!();
-    }
-}
+use clap::Parser;
 
-use clap::Parser as ClapParser;
-
-#[derive(ClapParser, Debug)]
+#[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct ShadyArgs {
     #[arg(short, long)]
     ast: bool,
 
     filename: String,
+
+    #[arg(raw = true)]
+    args: Vec<String>,
 }
 
-struct ShadyContext {
+pub struct ShadyContext {
     args: ShadyArgs,
     program: ast::ProgramAST,
 }
@@ -46,5 +35,8 @@ fn main() {
         return;
     }
 
-    print_usage(context);
+    let mut cmd = args::get_command(&context);
+    cmd //.get_matches_from(&context.args.args)
+        .print_help()
+        .unwrap();
 }
