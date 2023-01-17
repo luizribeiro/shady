@@ -167,11 +167,9 @@ fn parse_program(pair: Pair<Rule>) -> Program {
 
 fn main() {
     let unparsed_file = fs::read_to_string("example.shady").unwrap();
-    let pairs = ShadyParser::parse(Rule::program, &unparsed_file).unwrap();
-
-    for pair in pairs {
-        if pair.as_rule() == Rule::program {
-            println!("{:#?}", parse_program(pair));
-        }
-    }
+    let mut pairs = ShadyParser::parse(Rule::program, &unparsed_file).unwrap();
+    let pair = pairs.next().unwrap();
+    assert!(pair.as_rule() == Rule::program);
+    let program = parse_program(pair);
+    println!("{:#?}", program);
 }
