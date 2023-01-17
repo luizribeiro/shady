@@ -145,11 +145,26 @@ fn parse_program(pair: Pair<Rule>) -> ProgramAST {
     ProgramAST { fn_definitions }
 }
 
+fn print_usage(ProgramAST { fn_definitions }: ProgramAST) {
+    println!("Usage: shady <filename>");
+    for fun in fn_definitions {
+        if !fun.is_public {
+            continue;
+        }
+        print!("{}", fun.fn_name);
+        for param in fun.parameters {
+            print!(" <{}>", param[1..].to_uppercase());
+        }
+        println!();
+    }
+}
+
 fn main() {
     let unparsed_file = fs::read_to_string("example.shady").unwrap();
     let mut pairs = ShadyParser::parse(Rule::program, &unparsed_file).unwrap();
     let pair = pairs.next().unwrap();
     assert!(pair.as_rule() == Rule::program);
     let program = parse_program(pair);
-    println!("{:#?}", program);
+    print_usage(program);
+    //println!("{:#?}", program);
 }

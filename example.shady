@@ -4,9 +4,9 @@
  */
 public main = foobar (2 + 2) (stdout (ls));
 
-restart $service = sudo systemctl restart $service;
+public restart $service = sudo systemctl restart $service;
 
-create-vm $hostname $id = proxmox-new $service $id;
+public create-vm $hostname $id = proxmox-new $service $id;
 
 public collect-garbage = {
   nix-collect-garbage --delete-old;
