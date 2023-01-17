@@ -28,27 +28,21 @@ unquoted_str_arg = @{ ASCII_ALPHANUMERIC+ }
 code_block = { "{" ~ (expr ~ ";")* ~ "}" }
 
 expr = {
-  (
-  (prefix_op* ~ primary ~ postfix_op*
-  ~ (infix_op ~ prefix_op* ~ primary ~ postfix_op* )*))
-  | fn_call | code_block
+  (prefix_op* ~ primary
+  ~ (infix_op ~ prefix_op* ~ primary)*)
+  | fn_call
+  | code_block
 }
 primary = _{ variable | value | "(" ~ expr ~ ")" }
 variable = @{ "$" ~ token }
 value = _{ int | str }
 
-infix_op =  _{ add | sub | mul | div | pow }
-add = { "+" }
-sub = { "-" }
-mul = { "*" }
-div = { "/" }
-pow = { "^" }
+infix_op =  @{
+  "/" | "*" | "+" | "-" | "%" | "==" | "!=" | "<" | ">" | "<=" | ">="
+  | ("`" ~ token ~ "`")
+}
 
-prefix_op = _{ neg }
-neg = { "-" }
-
-postfix_op = _{ fac }
-fac = { "!" }
+prefix_op = @{ "!" | "-" }
 
 int = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT+ | ASCII_DIGIT }
 

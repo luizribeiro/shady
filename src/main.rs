@@ -50,10 +50,6 @@ enum Expr {
         op: String,
         rhs: Box<Expr>,
     },
-    Postfix {
-        lhs: Box<Expr>,
-        op: String,
-    },
     Codeblock {
         statements: Vec<Expr>,
     },
@@ -92,11 +88,8 @@ fn parse_call(pair: Pair<Rule>) -> Expr {
 
 fn parse_expr(pair: Pair<Rule>) -> Expr {
     let pratt = PrattParser::new()
-        .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
-        .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
-        .op(Op::infix(Rule::pow, Assoc::Right))
-        .op(Op::postfix(Rule::fac))
-        .op(Op::prefix(Rule::neg));
+        .op(Op::infix(Rule::infix_op, Assoc::Left))
+        .op(Op::prefix(Rule::prefix_op));
 
     pratt
         .map_primary(|primary| match primary.as_rule() {
@@ -110,10 +103,6 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
         .map_prefix(|op, rhs| Expr::Prefix {
             op: op.as_str().to_string(),
             rhs: Box::new(rhs),
-        })
-        .map_postfix(|lhs, op| Expr::Postfix {
-            lhs: Box::new(lhs),
-            op: op.as_str().to_string(),
         })
         .map_infix(|lhs, op, rhs| Expr::Infix {
             lhs: Box::new(lhs),
