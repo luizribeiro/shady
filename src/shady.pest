@@ -1,4 +1,7 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ single_line_comment | multiline_comment }
+single_line_comment = _{ "#" ~ (!(NEWLINE) ~ ANY)* }
+multiline_comment = _{ "/*" ~ (!("*/") ~ ANY)* ~ "*/"}
 
 program = { SOI ~ (decl ~ ";")* ~ EOI }
 
