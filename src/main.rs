@@ -145,9 +145,9 @@ fn parse_program(pair: Pair<Rule>) -> ProgramAST {
     ProgramAST { fn_definitions }
 }
 
-fn print_usage(ProgramAST { fn_definitions }: ProgramAST) {
-    println!("Usage: shady <filename>");
-    for fun in fn_definitions {
+fn print_usage(context: ShadyContext) {
+    println!("Usage: shady {}", context.args.filename);
+    for fun in context.program.fn_definitions {
         if !fun.is_public {
             continue;
         }
@@ -159,12 +159,36 @@ fn print_usage(ProgramAST { fn_definitions }: ProgramAST) {
     }
 }
 
+use clap::Parser as ClapParser;
+
+#[derive(ClapParser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct ShadyArgs {
+    #[arg(short, long)]
+    ast: bool,
+
+    filename: String,
+}
+
+struct ShadyContext {
+    args: ShadyArgs,
+    program: ProgramAST,
+}
+
 fn main() {
-    let unparsed_file = fs::read_to_string("example.shady").unwrap();
+    let args = ShadyArgs::parse();
+
+    let unparsed_file = fs::read_to_string(&args.filename).unwrap();
     let mut pairs = ShadyParser::parse(Rule::program, &unparsed_file).unwrap();
     let pair = pairs.next().unwrap();
     assert!(pair.as_rule() == Rule::program);
     let program = parse_program(pair);
-    print_usage(program);
-    //println!("{:#?}", program);
+    let context = ShadyContext { args, program };
+
+    if context.args.ast {
+        println!("{:#?}", context.program);
+        return;
+    }
+
+    print_usage(context);
 }
