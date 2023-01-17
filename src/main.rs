@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
@@ -22,19 +23,74 @@ struct Decl {
     is_infix: bool,
     fn_name: String,
     parameters: Vec<String>,
+    expr: Expr,
 }
 
-fn parse_call(pair: Pair<Rule>) {
+#[derive(Debug)]
+enum Value {
+    Int(i64),
+    Bool(bool),
+    String(String),
+}
+
+#[derive(Debug)]
+enum Expr {
+    Value(Value),
+    Variable(String),
+    FnCall {
+        fn_name: String,
+        arguments: Vec<Expr>,
+    },
+    Prefix {
+        op: String,
+        rhs: Box<Expr>,
+    },
+    Infix {
+        lhs: Box<Expr>,
+        op: String,
+        rhs: Box<Expr>,
+    },
+    Postfix {
+        lhs: Box<Expr>,
+        op: String,
+    },
+    Codeblock {
+        statements: Vec<Expr>,
+    },
+}
+
+fn parse_code_block(pair: Pair<Rule>) -> Expr {
+    let mut statements = Vec::new();
     for pair in pair.into_inner() {
         match pair.as_rule() {
-            Rule::fn_name => println!("calling {:?}", pair.as_str()),
-            Rule::expr => parse_expr(pair),
-            _ => println!("    {:?}: {:?}", pair.as_rule(), pair.as_str()),
+            Rule::expr => statements.push(parse_expr(pair)),
+            _ => unreachable!(),
         }
+    }
+    Expr::Codeblock { statements }
+}
+
+fn parse_call(pair: Pair<Rule>) -> Expr {
+    let mut fn_name: Option<String> = None;
+    let mut arguments: Vec<Expr> = Vec::new();
+
+    for pair in pair.into_inner() {
+        match pair.as_rule() {
+            Rule::fn_name => fn_name = Some(pair.as_str().to_string()),
+            Rule::expr => arguments.push(parse_expr(pair)),
+            Rule::unquoted_str_arg => {
+                arguments.push(Expr::Value(Value::String(pair.as_str().to_string())))
+            }
+            _ => unreachable!("unknown rule type: {:?}", pair.as_rule()),
+        }
+    }
+    Expr::FnCall {
+        fn_name: fn_name.unwrap(),
+        arguments,
     }
 }
 
-fn parse_expr(pair: Pair<Rule>) {
+fn parse_expr(pair: Pair<Rule>) -> Expr {
     let pratt = PrattParser::new()
         .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
         .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
@@ -44,21 +100,27 @@ fn parse_expr(pair: Pair<Rule>) {
 
     pratt
         .map_primary(|primary| match primary.as_rule() {
-            Rule::int => println!("int: {:?}", primary.as_str()),
-            Rule::expr => parse_expr(primary),
             Rule::fn_call => parse_call(primary),
-            _ => println!("primary: {:?} {:?}", primary.as_rule(), primary.as_str()),
+            Rule::expr => parse_expr(primary),
+            Rule::code_block => Expr::Codeblock { statements: vec![] },
+            Rule::int => Expr::Value(Value::Int(primary.as_str().parse().unwrap())),
+            Rule::variable => Expr::Variable(primary.as_str().to_string()),
+            _ => unreachable!("unknown rule type: {:?}", primary.as_rule()),
         })
-        .map_prefix(|op, _rhs| match op.as_rule() {
-            _ => println!("prefix: {:?} {:?}", op.as_rule(), op.as_str()),
+        .map_prefix(|op, rhs| Expr::Prefix {
+            op: op.as_str().to_string(),
+            rhs: Box::new(rhs),
         })
-        .map_postfix(|_lhs, op| match op.as_rule() {
-            _ => println!("postfix: {:?} {:?}", op.as_rule(), op.as_str()),
+        .map_postfix(|lhs, op| Expr::Postfix {
+            lhs: Box::new(lhs),
+            op: op.as_str().to_string(),
         })
-        .map_infix(|_lhs, op, _rhs| match op.as_rule() {
-            _ => println!("infix: {:?} {:?}", op.as_rule(), op.as_str()),
+        .map_infix(|lhs, op, rhs| Expr::Infix {
+            lhs: Box::new(lhs),
+            op: op.as_str().to_string(),
+            rhs: Box::new(rhs),
         })
-        .parse(pair.into_inner());
+        .parse(pair.into_inner())
 }
 
 fn parse_decl(pair: Pair<Rule>) -> Decl {
@@ -66,6 +128,7 @@ fn parse_decl(pair: Pair<Rule>) -> Decl {
     let mut is_infix = false;
     let mut fn_name: Option<String> = None;
     let mut parameters: Vec<String> = vec![];
+    let mut expr: Option<Expr> = None;
 
     for pair in pair.into_inner() {
         match pair.as_rule() {
@@ -73,7 +136,7 @@ fn parse_decl(pair: Pair<Rule>) -> Decl {
             Rule::infix => is_infix = true,
             Rule::fn_name => fn_name = Some(pair.as_str().to_string()),
             Rule::parameter => parameters.push(pair.as_str().to_string()),
-            Rule::expr => parse_expr(pair),
+            Rule::expr => expr = Some(parse_expr(pair)),
             _ => unreachable!(),
         };
     }
@@ -83,6 +146,7 @@ fn parse_decl(pair: Pair<Rule>) -> Decl {
         is_infix,
         fn_name: fn_name.unwrap(),
         parameters,
+        expr: expr.unwrap(),
     }
 }
 
@@ -107,7 +171,7 @@ fn main() {
 
     for pair in pairs {
         if pair.as_rule() == Rule::program {
-            println!("{:?}", parse_program(pair));
+            println!("{:#?}", parse_program(pair));
         }
     }
 }
