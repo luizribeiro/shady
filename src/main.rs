@@ -13,12 +13,12 @@ use std::fs;
 pub struct ShadyParser;
 
 #[derive(Debug)]
-struct Program {
-    decls: Vec<Decl>,
+struct ProgramAST {
+    fn_definitions: Vec<FnDefinition>,
 }
 
 #[derive(Debug)]
-struct Decl {
+struct FnDefinition {
     is_public: bool,
     is_infix: bool,
     fn_name: String,
@@ -37,16 +37,16 @@ enum Value {
 enum Expr {
     Value(Value),
     Variable(String),
-    FnCall {
+    Call {
         fn_name: String,
         arguments: Vec<Expr>,
     },
-    Codeblock {
+    Block {
         statements: Vec<Expr>,
     },
 }
 
-fn parse_code_block(pair: Pair<Rule>) -> Expr {
+fn parse_block(pair: Pair<Rule>) -> Expr {
     let mut statements = Vec::new();
     for pair in pair.into_inner() {
         match pair.as_rule() {
@@ -54,7 +54,7 @@ fn parse_code_block(pair: Pair<Rule>) -> Expr {
             _ => unreachable!(),
         }
     }
-    Expr::Codeblock { statements }
+    Expr::Block { statements }
 }
 
 fn parse_call(pair: Pair<Rule>) -> Expr {
@@ -71,7 +71,8 @@ fn parse_call(pair: Pair<Rule>) -> Expr {
             _ => unreachable!("unknown rule type: {:?}", pair.as_rule()),
         }
     }
-    Expr::FnCall {
+
+    Expr::Call {
         fn_name: fn_name.unwrap(),
         arguments,
     }
@@ -84,25 +85,25 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
 
     pratt
         .map_primary(|primary| match primary.as_rule() {
-            Rule::fn_call => parse_call(primary),
+            Rule::call => parse_call(primary),
             Rule::expr => parse_expr(primary),
-            Rule::code_block => Expr::Codeblock { statements: vec![] },
+            Rule::block => Expr::Block { statements: vec![] },
             Rule::int => Expr::Value(Value::Int(primary.as_str().parse().unwrap())),
             Rule::variable => Expr::Variable(primary.as_str().to_string()),
             _ => unreachable!("unknown rule type: {:?}", primary.as_rule()),
         })
-        .map_prefix(|op, rhs| Expr::FnCall {
+        .map_prefix(|op, rhs| Expr::Call {
             fn_name: op.as_str().to_string(),
             arguments: vec![rhs],
         })
-        .map_infix(|lhs, op, rhs| Expr::FnCall {
+        .map_infix(|lhs, op, rhs| Expr::Call {
             fn_name: op.as_str().to_string(),
             arguments: vec![lhs, rhs],
         })
         .parse(pair.into_inner())
 }
 
-fn parse_decl(pair: Pair<Rule>) -> Decl {
+fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
     let mut is_public = false;
     let mut is_infix = false;
     let mut fn_name: Option<String> = None;
@@ -120,7 +121,7 @@ fn parse_decl(pair: Pair<Rule>) -> Decl {
         };
     }
 
-    Decl {
+    FnDefinition {
         is_public,
         is_infix,
         fn_name: fn_name.unwrap(),
@@ -129,19 +130,19 @@ fn parse_decl(pair: Pair<Rule>) -> Decl {
     }
 }
 
-fn parse_program(pair: Pair<Rule>) -> Program {
-    let mut decls: Vec<Decl> = vec![];
+fn parse_program(pair: Pair<Rule>) -> ProgramAST {
+    let mut fn_definitions: Vec<FnDefinition> = vec![];
     let pairs = pair.into_inner();
 
     for pair in pairs {
         match pair.as_rule() {
-            Rule::decl => decls.push(parse_decl(pair)),
+            Rule::fn_definition => fn_definitions.push(parse_fn_definition(pair)),
             Rule::EOI => (),
             _ => unreachable!(),
         }
     }
 
-    Program { decls }
+    ProgramAST { fn_definitions }
 }
 
 fn main() {
