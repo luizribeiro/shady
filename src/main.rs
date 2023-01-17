@@ -18,11 +18,16 @@ struct ProgramAST {
 }
 
 #[derive(Debug)]
-struct FnDefinition {
+struct FnSignature {
     is_public: bool,
     is_infix: bool,
     fn_name: String,
     parameters: Vec<String>,
+}
+
+#[derive(Debug)]
+struct FnDefinition {
+    signature: FnSignature,
     expr: Expr,
 }
 
@@ -122,10 +127,12 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
     }
 
     FnDefinition {
-        is_public,
-        is_infix,
-        fn_name: fn_name.unwrap(),
-        parameters,
+        signature: FnSignature {
+            is_public,
+            is_infix,
+            fn_name: fn_name.unwrap(),
+            parameters,
+        },
         expr: expr.unwrap(),
     }
 }
@@ -148,11 +155,12 @@ fn parse_program(pair: Pair<Rule>) -> ProgramAST {
 fn print_usage(context: ShadyContext) {
     println!("Usage: shady {}", context.args.filename);
     for fun in context.program.fn_definitions {
-        if !fun.is_public {
+        let signature = &fun.signature;
+        if !signature.is_public {
             continue;
         }
-        print!("{}", fun.fn_name);
-        for param in fun.parameters {
+        print!("{}", signature.fn_name);
+        for param in &signature.parameters {
             print!(" <{}>", param[1..].to_uppercase());
         }
         println!();
