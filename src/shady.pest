@@ -2,7 +2,7 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
 program = { SOI ~ (decl ~ ";")* ~ EOI }
 
-token = @{ ASCII_ALPHA+ }
+token = @{ (ASCII_ALPHA | "_" | "-")+ }
 
 public = @{ "public" }
 infix = @{ "infix" }
@@ -17,7 +17,6 @@ decl = {
   )
   ~ "=" ~ expr
 }
-
 
 fn_call = { fn_name ~ fn_arg* }
 fn_arg = { expr | unquoted_str_arg }
