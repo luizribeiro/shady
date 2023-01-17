@@ -41,15 +41,6 @@ enum Expr {
         fn_name: String,
         arguments: Vec<Expr>,
     },
-    Prefix {
-        op: String,
-        rhs: Box<Expr>,
-    },
-    Infix {
-        lhs: Box<Expr>,
-        op: String,
-        rhs: Box<Expr>,
-    },
     Codeblock {
         statements: Vec<Expr>,
     },
@@ -100,14 +91,13 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
             Rule::variable => Expr::Variable(primary.as_str().to_string()),
             _ => unreachable!("unknown rule type: {:?}", primary.as_rule()),
         })
-        .map_prefix(|op, rhs| Expr::Prefix {
-            op: op.as_str().to_string(),
-            rhs: Box::new(rhs),
+        .map_prefix(|op, rhs| Expr::FnCall {
+            fn_name: op.as_str().to_string(),
+            arguments: vec![rhs],
         })
-        .map_infix(|lhs, op, rhs| Expr::Infix {
-            lhs: Box::new(lhs),
-            op: op.as_str().to_string(),
-            rhs: Box::new(rhs),
+        .map_infix(|lhs, op, rhs| Expr::FnCall {
+            fn_name: op.as_str().to_string(),
+            arguments: vec![lhs, rhs],
         })
         .parse(pair.into_inner())
 }
