@@ -22,11 +22,13 @@ fn_call = { fn_name ~ fn_arg* }
 fn_arg = { expr | unquoted_str_arg }
 unquoted_str_arg = @{ ASCII_ALPHANUMERIC+ }
 
+code_block = { "{" ~ (expr ~ ";")* ~ "}" }
+
 expr = {
   (
   (prefix_op* ~ primary ~ postfix_op*
   ~ (infix_op ~ prefix_op* ~ primary ~ postfix_op* )*))
-  | fn_call
+  | fn_call | code_block
 }
 primary = _{ variable | value | "(" ~ expr ~ ")" }
 variable = @{ "$" ~ token }
