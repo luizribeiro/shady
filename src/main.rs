@@ -42,7 +42,7 @@ fn main() {
     let cmd = args::get_command(&context);
     let matches = cmd.get_matches_from(&script_args);
 
-    let subcmd_name = matches.subcommand_name().unwrap();
+    let subcmd_name = matches.subcommand_name().unwrap_or("main");
     let fun = ast::get_fn_by_name(&context.program, subcmd_name).unwrap();
     let mut local_context = eval::LocalContext {
         vars: HashMap::new(),
