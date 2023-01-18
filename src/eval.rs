@@ -47,7 +47,20 @@ pub fn eval_expr(context: &ShadyContext, expr: &Expr) -> Value {
                     if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
                         eval_expr(&context, &fun.expr)
                     } else {
-                        panic!("function {} not found", fn_name);
+                        // run ls shell command
+                        let mut cmd = std::process::Command::new(fn_name);
+                        for arg in args {
+                            match arg {
+                                Value::String(s) => {
+                                    cmd.arg(s);
+                                }
+                                Value::Int(i) => {
+                                    cmd.arg(i.to_string());
+                                }
+                            }
+                        }
+                        let status = cmd.status().unwrap().code().unwrap();
+                        Value::Int(status as i64)
                     }
                 }
             }

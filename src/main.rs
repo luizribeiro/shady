@@ -57,6 +57,5 @@ fn main() {
             );
         });
     }
-    println!("local_context: {:#?}", local_context);
     eval::eval_expr(&context, &fun.expr);
 }
