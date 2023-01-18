@@ -1,6 +1,21 @@
 use crate::ast::{get_fn_by_name, Expr, Value};
 use crate::ShadyContext;
 
+fn eval_math_op(op: &str, a: &Value, b: &Value) -> Value {
+    match (a, b) {
+        (Value::Int(a), Value::Int(b)) => match op {
+            "+" => Value::Int(a + b),
+            "-" => Value::Int(a - b),
+            "*" => Value::Int(a * b),
+            "/" => Value::Int(a / b),
+            "%" => Value::Int(a % b),
+            "^" => Value::Int(a.pow(*b as u32)),
+            _ => panic!("unknown operator {}", op),
+        },
+        _ => panic!("invalid arguments for operator {}", op),
+    }
+}
+
 pub fn eval_expr(context: &ShadyContext, expr: &Expr) -> Value {
     match expr {
         Expr::Value(value) => value.clone(),
@@ -15,27 +30,8 @@ pub fn eval_expr(context: &ShadyContext, expr: &Expr) -> Value {
                     println!("{:?}", args[0]);
                     Value::Int(0)
                 }
-                "*" => {
-                    let a = match args[0] {
-                        Value::Int(a) => a,
-                        _ => panic!("add: expected int"),
-                    };
-                    let b = match args[1] {
-                        Value::Int(b) => b,
-                        _ => panic!("add: expected int"),
-                    };
-                    Value::Int(a * b)
-                }
-                "+" => {
-                    let a = match args[0] {
-                        Value::Int(a) => a,
-                        _ => panic!("add: expected int"),
-                    };
-                    let b = match args[1] {
-                        Value::Int(b) => b,
-                        _ => panic!("add: expected int"),
-                    };
-                    Value::Int(a + b)
+                "+" | "-" | "*" | "/" | "%" | "^" => {
+                    eval_math_op(fn_name.as_str(), &args[0], &args[1])
                 }
                 _ => {
                     if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
