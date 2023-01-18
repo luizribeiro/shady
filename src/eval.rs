@@ -65,6 +65,7 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                                 }
                             }
                         }
+                        // TODO: properly deal with errors
                         let status = cmd.status().unwrap().code().unwrap();
                         Value::Int(status as i64)
                     }
