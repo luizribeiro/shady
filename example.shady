@@ -14,3 +14,8 @@ public collect-garbage = {
   nix-collect-garbage --delete-old;
   sudo docker system prune --all --force;
 };
+
+public hello-world = {
+  print "hello world";
+  print (2+2) * 5;
+};

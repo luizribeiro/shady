@@ -27,7 +27,10 @@ pub fn eval_expr(context: &ShadyContext, expr: &Expr) -> Value {
             }
             match fn_name.as_str() {
                 "print" => {
-                    println!("{:?}", args[0]);
+                    match args[0] {
+                        Value::String(ref s) => println!("{}", s),
+                        Value::Int(ref i) => println!("{}", i),
+                    }
                     Value::Int(0)
                 }
                 "+" | "-" | "*" | "/" | "%" | "^" => {

@@ -91,6 +91,11 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
             Rule::expr => parse_expr(primary),
             Rule::block => parse_block(primary),
             Rule::int => Expr::Value(Value::Int(primary.as_str().parse().unwrap())),
+            Rule::str => {
+                let raw_str = primary.as_str();
+                let unquoted_str = &raw_str[1..raw_str.len() - 1];
+                Expr::Value(Value::String(unquoted_str.to_string()))
+            }
             Rule::variable => Expr::Variable(primary.as_str().to_string()),
             _ => unreachable!("unknown rule type: {:?}", primary.as_rule()),
         })
