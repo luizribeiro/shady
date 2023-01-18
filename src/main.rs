@@ -43,6 +43,6 @@ fn main() {
     let subcmd_name = matches.subcommand_name().unwrap();
 
     let fun = ast::get_fn_by_name(&context.program, subcmd_name).unwrap();
-    let result = eval::eval_expr(&fun.expr);
+    let result = eval::eval_expr(&context, &fun.expr);
     println!("result: {:#?}", result);
 }

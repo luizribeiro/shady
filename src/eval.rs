@@ -1,13 +1,14 @@
-use crate::ast::{Expr, Value};
+use crate::ast::{get_fn_by_name, Expr, Value};
+use crate::ShadyContext;
 
-pub fn eval_expr(expr: &Expr) -> Value {
+pub fn eval_expr(context: &ShadyContext, expr: &Expr) -> Value {
     match expr {
         Expr::Value(value) => value.clone(),
         Expr::Variable(var_name) => panic!("variable {} not found", var_name),
         Expr::Call { fn_name, arguments } => {
             let mut args = Vec::new();
             for arg in arguments {
-                args.push(eval_expr(arg));
+                args.push(eval_expr(&context, arg));
             }
             match fn_name.as_str() {
                 "print" => {
@@ -36,13 +37,19 @@ pub fn eval_expr(expr: &Expr) -> Value {
                     };
                     Value::Int(a + b)
                 }
-                _ => panic!("unknown function {}", fn_name),
+                _ => {
+                    if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
+                        eval_expr(&context, &fun.expr)
+                    } else {
+                        panic!("function {} not found", fn_name);
+                    }
+                }
             }
         }
         Expr::Block { statements } => {
             let mut result = Value::Int(0);
             for statement in statements {
-                result = eval_expr(statement);
+                result = eval_expr(context, statement);
             }
             result
         }
