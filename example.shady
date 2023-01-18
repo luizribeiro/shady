@@ -7,11 +7,11 @@ public main = 2 + 2 * 5;
 public foobar = print (3 * (main));
 
 # TODO: foobar
-public restart $service: str = sudo systemctl restart $service;
+public restart $service = sudo systemctl restart $service;
 
-public create-vm $hostname $id = proxmox-new $hostname $id;
+public create-vm $hostname: str $id: int = proxmox-new $hostname $id;
 
-public create-foobar $foobar = {
+public create-foobar $foobar: str = {
   echo $foobar;
 };
 

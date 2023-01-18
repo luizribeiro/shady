@@ -13,11 +13,23 @@ pub struct ProgramAST {
 }
 
 #[derive(Debug)]
+pub enum Type {
+    Int,
+    Str,
+}
+
+#[derive(Debug)]
+pub struct Parameter {
+    pub name: String,
+    pub typ: Type,
+}
+
+#[derive(Debug)]
 pub struct FnSignature {
     pub is_public: bool,
     pub is_infix: bool,
     pub fn_name: String,
-    pub parameters: Vec<String>,
+    pub parameters: Vec<Parameter>,
 }
 
 #[derive(Debug)]
@@ -43,6 +55,14 @@ pub enum Expr {
     Block {
         statements: Vec<Expr>,
     },
+}
+
+fn parse_type(pair: Pair<Rule>) -> Type {
+    match pair.as_rule() {
+        Rule::type_int => Type::Int,
+        Rule::type_str => Type::Str,
+        _ => unreachable!(),
+    }
 }
 
 fn parse_block(pair: Pair<Rule>) -> Expr {
@@ -114,7 +134,7 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
     let mut is_public = false;
     let mut is_infix = false;
     let mut fn_name: Option<String> = None;
-    let mut parameters: Vec<String> = vec![];
+    let mut parameters: Vec<Parameter> = vec![];
     let mut expr: Option<Expr> = None;
 
     for pair in pair.into_inner() {
@@ -123,8 +143,17 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
             Rule::infix => is_infix = true,
             Rule::fn_name => fn_name = Some(pair.as_str().to_string()),
             Rule::parameter => {
-                let var_name = &pair.into_inner().next().unwrap();
-                parameters.push(var_name.as_str()[1..].to_string());
+                let mut inner = pair.into_inner();
+                let var_name = inner.next().unwrap();
+                let typ = match inner.next() {
+                    // default to string
+                    None => Type::Str,
+                    Some(typ) => parse_type(typ),
+                };
+                parameters.push(Parameter {
+                    name: var_name.as_str()[1..].to_string(),
+                    typ,
+                });
             }
             Rule::expr => expr = Some(parse_expr(pair)),
             _ => unreachable!(),

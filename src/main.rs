@@ -50,13 +50,16 @@ fn main() {
     let args = matches.subcommand_matches(&subcmd_name);
     if let Some(args) = args {
         for param in &fun.signature.parameters {
-            // TODO: handle types other than str
-            args.get_raw(&param).unwrap().for_each(|value| {
-                local_context.vars.insert(
-                    param.clone(),
-                    ast::Value::String(value.to_string_lossy().into_owned()),
-                );
-            });
+            args.get_raw(&param.name)
+                .unwrap()
+                .for_each(|raw_cli_value| {
+                    let cli_value: String = raw_cli_value.to_string_lossy().into_owned();
+                    let value = match param.typ {
+                        ast::Type::Str => ast::Value::String(cli_value),
+                        ast::Type::Int => ast::Value::Int(cli_value.parse().unwrap()),
+                    };
+                    local_context.vars.insert(param.name.clone(), value);
+                });
         }
     }
     eval::eval_expr(&local_context, &context, &fun.expr);
