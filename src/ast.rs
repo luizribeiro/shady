@@ -12,19 +12,19 @@ pub struct ProgramAST {
     pub fn_definitions: Vec<FnDefinition>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Type {
     Int,
     Str,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Parameter {
     pub name: String,
     pub typ: Type,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FnSignature {
     pub is_public: bool,
     pub is_infix: bool,
@@ -32,7 +32,7 @@ pub struct FnSignature {
     pub parameters: Vec<Parameter>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FnDefinition {
     pub signature: FnSignature,
     pub expr: Expr,
@@ -225,6 +225,23 @@ pub fn get_fn_by_name<'a>(program: &'a ProgramAST, fn_name: &str) -> Option<&'a 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_function_definition() {
+        let program = parse_script("ans = 42;");
+        assert_eq!(
+            program.fn_definitions[0],
+            FnDefinition {
+                signature: FnSignature {
+                    is_public: false,
+                    is_infix: false,
+                    fn_name: "ans".to_string(),
+                    parameters: vec![],
+                },
+                expr: Expr::Value(Value::Int(42)),
+            },
+        );
+    }
 
     macro_rules! parse_expr_tests {
         ($($name:ident: $value:expr,)*) => {
