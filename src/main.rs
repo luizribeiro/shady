@@ -47,15 +47,17 @@ fn main() {
     let mut local_context = eval::LocalContext {
         vars: HashMap::new(),
     };
-    let args = matches.subcommand_matches(&subcmd_name).unwrap();
-    for param in &fun.signature.parameters {
-        // TODO: handle types other than str
-        args.get_raw(&param).unwrap().for_each(|value| {
-            local_context.vars.insert(
-                param.clone(),
-                ast::Value::String(value.to_string_lossy().into_owned()),
-            );
-        });
+    let args = matches.subcommand_matches(&subcmd_name);
+    if let Some(args) = args {
+        for param in &fun.signature.parameters {
+            // TODO: handle types other than str
+            args.get_raw(&param).unwrap().for_each(|value| {
+                local_context.vars.insert(
+                    param.clone(),
+                    ast::Value::String(value.to_string_lossy().into_owned()),
+                );
+            });
+        }
     }
     eval::eval_expr(&local_context, &context, &fun.expr);
 }
