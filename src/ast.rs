@@ -38,13 +38,13 @@ pub struct FnDefinition {
     pub expr: Expr,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     Int(i64),
     String(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Expr {
     Value(Value),
     Variable(String),
@@ -186,12 +186,16 @@ fn parse_program(pair: Pair<Rule>) -> ProgramAST {
     ProgramAST { fn_definitions }
 }
 
-pub fn parse_script(filename: &str) -> ProgramAST {
-    let unparsed_file = fs::read_to_string(&filename).unwrap();
-    let mut pairs = ShadyParser::parse(Rule::program, &unparsed_file).unwrap();
+pub fn parse_script(text: &str) -> ProgramAST {
+    let mut pairs = ShadyParser::parse(Rule::program, &text).unwrap();
     let pair = pairs.next().unwrap();
     assert!(pair.as_rule() == Rule::program);
     parse_program(pair)
+}
+
+pub fn parse_file(filename: &str) -> ProgramAST {
+    let unparsed_file = fs::read_to_string(&filename).unwrap();
+    parse_script(&unparsed_file)
 }
 
 pub fn get_fn_by_name<'a>(program: &'a ProgramAST, fn_name: &str) -> Option<&'a FnDefinition> {
@@ -199,4 +203,68 @@ pub fn get_fn_by_name<'a>(program: &'a ProgramAST, fn_name: &str) -> Option<&'a 
         .fn_definitions
         .iter()
         .find(|fn_def| fn_def.signature.fn_name == fn_name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    macro_rules! parse_expr_tests {
+        ($($name:ident: $value:expr,)*) => {
+            $(
+                #[test]
+                fn $name() {
+                    let (input, expected) = $value;
+                    let program = parse_script(input);
+                    let expr = &program.fn_definitions[0].expr;
+                    assert_eq!(expr, &expected);
+                }
+            )*
+        }
+    }
+
+    parse_expr_tests! {
+        parse_int: ("main = 1;", Expr::Value(Value::Int(1))),
+        parse_str: ("main = \"hello\";", Expr::Value(Value::String("hello".to_string()))),
+        parse_add: ("main = 1 + 2;", Expr::Call { fn_name: "+".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
+        parse_sub: ("main = 1 - 2;", Expr::Call { fn_name: "-".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
+        parse_mul: ("main = 1 * 2;", Expr::Call { fn_name: "*".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
+        parse_div: ("main = 1 / 2;", Expr::Call { fn_name: "/".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
+        parse_pow: ("main = 1 ^ 2;", Expr::Call { fn_name: "^".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
+        /*
+        TODO: add this test back once the bug is fixed
+        parse_call: ("main = add 1 2;", Expr::Call {
+            fn_name: "add".to_string(),
+            arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))],
+        }),
+        */
+        parse_call_with_unquoted_str_arg: ("main = add hello;", Expr::Call {
+            fn_name: "add".to_string(),
+            arguments: vec![Expr::Value(Value::String("hello".to_string()))],
+        }),
+        parse_call_with_variable: ("main = add $a;", Expr::Call {
+            fn_name: "add".to_string(),
+            arguments: vec![Expr::Variable("a".to_string())],
+        }),
+        parse_block: (
+            r#"main = { 1 * 2; echo "hi"; };"#,
+            Expr::Block {
+                statements: vec![
+                    Expr::Call {
+                        fn_name: "*".to_string(),
+                        arguments: vec![
+                            Expr::Value(Value::Int(1)),
+                            Expr::Value(Value::Int(2)),
+                        ],
+                    },
+                    Expr::Call {
+                        fn_name: "echo".to_string(),
+                        arguments: vec![
+                            Expr::Value(Value::String("hi".to_string())),
+                        ],
+                    },
+                ],
+            }
+        ),
+    }
 }

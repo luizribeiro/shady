@@ -29,7 +29,7 @@ pub struct ShadyContext {
 fn main() {
     let args = ShadyArgs::parse();
 
-    let program = ast::parse_script(&args.filename);
+    let program = ast::parse_file(&args.filename);
     let context = ShadyContext { args, program };
 
     if context.args.ast {
