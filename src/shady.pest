@@ -37,10 +37,16 @@ primary = _{ variable | value | "(" ~ expr ~ ")" }
 variable = @{ "$" ~ token }
 value = _{ int | str }
 
-infix_op =  @{
-  "/" | "*" | "+" | "-" | "%" | "==" | "!=" | "<" | ">" | "<=" | ">="
-  | ("`" ~ token ~ "`")
-}
+infix_op =  _{ math_infix_op | bool_infix_op | custom_infix_op }
+custom_infix_op = @{ ("`" ~ token ~ "`") }
+bool_infix_op = @{ "==" | "!=" | "<" | ">" | "<=" | ">=" }
+math_infix_op = _{ add | sub | mul | div | mod | pow }
+add = @{ "+" }
+sub = @{ "-" }
+mul = @{ "*" }
+div = @{ "/" }
+mod = @{ "%" }
+pow = @{ "^" }
 
 prefix_op = @{ "!" | "-" }
 

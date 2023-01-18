@@ -3,7 +3,7 @@
 /*
  * this is a multiline comment
  */
-public main = 2 + 2;
+public main = 2 + 2 * 5;
 public foobar = 3 * (main);
 
 public restart $service = sudo systemctl restart $service;

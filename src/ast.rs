@@ -79,7 +79,10 @@ fn parse_call(pair: Pair<Rule>) -> Expr {
 
 fn parse_expr(pair: Pair<Rule>) -> Expr {
     let pratt = PrattParser::new()
+        .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
+        .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
         .op(Op::infix(Rule::infix_op, Assoc::Left))
+        .op(Op::infix(Rule::pow, Assoc::Right))
         .op(Op::prefix(Rule::prefix_op));
 
     pratt
