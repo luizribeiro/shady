@@ -57,5 +57,5 @@ fn main() {
             );
         });
     }
-    eval::eval_expr(&context, &fun.expr);
+    eval::eval_expr(&local_context, &context, &fun.expr);
 }

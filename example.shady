@@ -4,11 +4,16 @@
  * this is a multiline comment
  */
 public main = 2 + 2 * 5;
-public foobar = 3 * (main);
+public foobar = print (3 * (main));
 
+# TODO: foobar
 public restart $service = sudo systemctl restart $service;
 
 public create-vm $hostname $id = proxmox-new $hostname $id;
+
+public create-foobar $foobar = {
+  echo $foobar;
+};
 
 public collect-garbage = {
   nix-collect-garbage --delete-old;

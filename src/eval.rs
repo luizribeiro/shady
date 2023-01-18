@@ -23,14 +23,20 @@ fn eval_math_op(op: &str, a: &Value, b: &Value) -> Value {
     }
 }
 
-pub fn eval_expr(context: &ShadyContext, expr: &Expr) -> Value {
+pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Value {
     match expr {
         Expr::Value(value) => value.clone(),
-        Expr::Variable(var_name) => panic!("variable {} not found", var_name),
+        Expr::Variable(var_name) => {
+            let value = local_context.vars.get(var_name);
+            if value.is_none() {
+                panic!("variable {} not found", var_name);
+            }
+            value.unwrap().clone()
+        }
         Expr::Call { fn_name, arguments } => {
             let mut args = Vec::new();
             for arg in arguments {
-                args.push(eval_expr(&context, arg));
+                args.push(eval_expr(&local_context, &context, arg));
             }
             match fn_name.as_str() {
                 "print" => {
@@ -45,7 +51,7 @@ pub fn eval_expr(context: &ShadyContext, expr: &Expr) -> Value {
                 }
                 _ => {
                     if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
-                        eval_expr(&context, &fun.expr)
+                        eval_expr(&local_context, &context, &fun.expr)
                     } else {
                         // run ls shell command
                         let mut cmd = std::process::Command::new(fn_name);
@@ -68,7 +74,7 @@ pub fn eval_expr(context: &ShadyContext, expr: &Expr) -> Value {
         Expr::Block { statements } => {
             let mut result = Value::Int(0);
             for statement in statements {
-                result = eval_expr(context, statement);
+                result = eval_expr(&local_context, context, statement);
             }
             result
         }
