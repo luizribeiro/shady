@@ -96,7 +96,7 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
                 let unquoted_str = &raw_str[1..raw_str.len() - 1];
                 Expr::Value(Value::String(unquoted_str.to_string()))
             }
-            Rule::variable => Expr::Variable(primary.as_str().to_string()),
+            Rule::variable => Expr::Variable(primary.as_str()[1..].to_string()),
             _ => unreachable!("unknown rule type: {:?}", primary.as_rule()),
         })
         .map_prefix(|op, rhs| Expr::Call {
@@ -122,7 +122,7 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
             Rule::public => is_public = true,
             Rule::infix => is_infix = true,
             Rule::fn_name => fn_name = Some(pair.as_str().to_string()),
-            Rule::parameter => parameters.push(pair.as_str().to_string()),
+            Rule::parameter => parameters.push(pair.as_str()[1..].to_string()),
             Rule::expr => expr = Some(parse_expr(pair)),
             _ => unreachable!(),
         };

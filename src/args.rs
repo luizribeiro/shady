@@ -17,8 +17,7 @@ pub fn get_command(context: &ShadyContext) -> clap::Command {
 
         let mut subcmd = Command::new(string_to_static_str(signature.fn_name.clone()));
         for param in &signature.parameters {
-            subcmd =
-                subcmd.arg(Arg::new(string_to_static_str(param[1..].to_string())).required(true));
+            subcmd = subcmd.arg(Arg::new(string_to_static_str(param.to_string())).required(true));
         }
         cmd = cmd.subcommand(subcmd);
     }

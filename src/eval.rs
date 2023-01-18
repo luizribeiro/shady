@@ -1,5 +1,12 @@
+use std::collections::HashMap;
+
 use crate::ast::{get_fn_by_name, Expr, Value};
 use crate::ShadyContext;
+
+#[derive(Debug)]
+pub struct LocalContext {
+    pub vars: HashMap<String, Value>,
+}
 
 fn eval_math_op(op: &str, a: &Value, b: &Value) -> Value {
     match (a, b) {
