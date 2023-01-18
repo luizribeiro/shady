@@ -122,7 +122,10 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
             Rule::public => is_public = true,
             Rule::infix => is_infix = true,
             Rule::fn_name => fn_name = Some(pair.as_str().to_string()),
-            Rule::parameter => parameters.push(pair.as_str()[1..].to_string()),
+            Rule::parameter => {
+                let var_name = &pair.into_inner().next().unwrap();
+                parameters.push(var_name.as_str()[1..].to_string());
+            }
             Rule::expr => expr = Some(parse_expr(pair)),
             _ => unreachable!(),
         };

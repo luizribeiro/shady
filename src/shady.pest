@@ -10,7 +10,8 @@ token = @{ (ASCII_ALPHA | "_" | "-")+ }
 public = @{ "public" }
 infix = @{ "infix" }
 fn_name = @{ token }
-parameter = @{ "$" ~ token }
+parameter = { variable ~ (":" ~ typ)? }
+typ = @{ "int" | "str" }
 
 fn_definition = {
   public?
