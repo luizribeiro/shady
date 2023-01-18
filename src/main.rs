@@ -4,6 +4,7 @@ extern crate pest_derive;
 
 mod args;
 mod ast;
+mod eval;
 
 use clap::Parser;
 
@@ -39,5 +40,9 @@ fn main() {
     script_args.extend(context.args.args.clone());
     let cmd = args::get_command(&context);
     let matches = cmd.get_matches_from(&script_args);
-    println!("{:#?}", matches);
+    let subcmd_name = matches.subcommand_name().unwrap();
+
+    let fun = ast::get_fn_by_name(&context.program, subcmd_name).unwrap();
+    let result = eval::eval_expr(&fun.expr);
+    println!("result: {:#?}", result);
 }

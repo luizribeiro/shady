@@ -3,7 +3,8 @@
 /*
  * this is a multiline comment
  */
-public main = foobar (2 + 2) (stdout (ls));
+public main = 2 + 2 * 5;
+public foobar = 3 * 3;
 
 public restart $service = sudo systemctl restart $service;
 

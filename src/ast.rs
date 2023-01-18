@@ -26,7 +26,7 @@ pub struct FnDefinition {
     pub expr: Expr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
     String(String),
@@ -152,4 +152,11 @@ pub fn parse_script(filename: &str) -> ProgramAST {
     let pair = pairs.next().unwrap();
     assert!(pair.as_rule() == Rule::program);
     parse_program(pair)
+}
+
+pub fn get_fn_by_name<'a>(program: &'a ProgramAST, fn_name: &str) -> Option<&'a FnDefinition> {
+    program
+        .fn_definitions
+        .iter()
+        .find(|fn_def| fn_def.signature.fn_name == fn_name)
 }
