@@ -84,6 +84,7 @@ fn parse_call(pair: Pair<Rule>) -> Expr {
         match pair.as_rule() {
             Rule::fn_name => fn_name = Some(pair.as_str().to_string()),
             Rule::expr => arguments.push(parse_expr(pair)),
+            x if is_value(x) => arguments.push(Expr::Value(parse_value(pair))),
             Rule::unquoted_str_arg => {
                 arguments.push(Expr::Value(Value::String(pair.as_str().to_string())))
             }
@@ -94,6 +95,27 @@ fn parse_call(pair: Pair<Rule>) -> Expr {
     Expr::Call {
         fn_name: fn_name.unwrap(),
         arguments,
+    }
+}
+
+fn is_value(rule: Rule) -> bool {
+    match rule {
+        Rule::int => true,
+        Rule::str => true,
+        _ => false,
+    }
+}
+
+fn parse_value(pair: Pair<Rule>) -> Value {
+    match pair.as_rule() {
+        Rule::int => Value::Int(pair.as_str().parse().unwrap()),
+        Rule::str => {
+            let mut s = pair.as_str().to_string();
+            s.remove(0);
+            s.pop();
+            Value::String(s)
+        }
+        _ => unreachable!(),
     }
 }
 
@@ -110,12 +132,7 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
             Rule::call => parse_call(primary),
             Rule::expr => parse_expr(primary),
             Rule::block => parse_block(primary),
-            Rule::int => Expr::Value(Value::Int(primary.as_str().parse().unwrap())),
-            Rule::str => {
-                let raw_str = primary.as_str();
-                let unquoted_str = &raw_str[1..raw_str.len() - 1];
-                Expr::Value(Value::String(unquoted_str.to_string()))
-            }
+            x if is_value(x) => Expr::Value(parse_value(primary)),
             Rule::variable => Expr::Variable(primary.as_str()[1..].to_string()),
             _ => unreachable!("unknown rule type: {:?}", primary.as_rule()),
         })
@@ -231,13 +248,10 @@ mod tests {
         parse_mul: ("main = 1 * 2;", Expr::Call { fn_name: "*".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
         parse_div: ("main = 1 / 2;", Expr::Call { fn_name: "/".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
         parse_pow: ("main = 1 ^ 2;", Expr::Call { fn_name: "^".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
-        /*
-        TODO: add this test back once the bug is fixed
         parse_call: ("main = add 1 2;", Expr::Call {
             fn_name: "add".to_string(),
             arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))],
         }),
-        */
         parse_call_with_unquoted_str_arg: ("main = add hello;", Expr::Call {
             fn_name: "add".to_string(),
             arguments: vec![Expr::Value(Value::String("hello".to_string()))],
