@@ -15,7 +15,7 @@ struct ShadyArgs {
 
     filename: String,
 
-    #[arg(raw = true)]
+    #[arg(allow_hyphen_values = true)]
     args: Vec<String>,
 }
 
@@ -35,8 +35,9 @@ fn main() {
         return;
     }
 
-    let mut cmd = args::get_command(&context);
-    cmd //.get_matches_from(&context.args.args)
-        .print_help()
-        .unwrap();
+    let mut script_args = vec![context.args.filename.clone()];
+    script_args.extend(context.args.args.clone());
+    let cmd = args::get_command(&context);
+    let matches = cmd.get_matches_from(&script_args);
+    println!("{:#?}", matches);
 }

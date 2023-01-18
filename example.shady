@@ -1,3 +1,4 @@
+#!./target/debug/shady
 # single line comment
 /*
  * this is a multiline comment

@@ -7,7 +7,7 @@ fn string_to_static_str(s: String) -> &'static str {
 }
 
 pub fn get_command(context: &ShadyContext) -> clap::Command {
-    let mut cmd = command!();
+    let mut cmd = command!().bin_name(format!("shady {}", context.args.filename));
 
     for fun in &context.program.fn_definitions {
         let signature = &fun.signature;
