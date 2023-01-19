@@ -57,6 +57,11 @@ pub enum Expr {
     Block {
         statements: Vec<Expr>,
     },
+    If {
+        condition: Box<Expr>,
+        when_true: Box<Expr>,
+        when_false: Box<Expr>,
+    },
 }
 
 fn parse_type(pair: Pair<Rule>) -> Type {
@@ -77,6 +82,18 @@ fn parse_block(pair: Pair<Rule>) -> Expr {
         }
     }
     Expr::Block { statements }
+}
+
+fn parse_if(pair: Pair<Rule>) -> Expr {
+    let pairs: Vec<Pair<Rule>> = pair.into_inner().collect();
+    match &pairs[..] {
+        [a, b, c] => Expr::If {
+            condition: Box::new(parse_expr(a.clone())),
+            when_true: Box::new(parse_expr(b.clone())),
+            when_false: Box::new(parse_expr(c.clone())),
+        },
+        _ => unreachable!(),
+    }
 }
 
 fn parse_call(pair: Pair<Rule>) -> Expr {
@@ -137,6 +154,7 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
             Rule::call => parse_call(primary),
             Rule::expr => parse_expr(primary),
             Rule::block => parse_block(primary),
+            Rule::if_expr => parse_if(primary),
             x if is_value(x) => Expr::Value(parse_value(primary)),
             Rule::variable => Expr::Variable(primary.as_str()[1..].to_string()),
             _ => unreachable!("unknown rule type: {:?}", primary.as_rule()),

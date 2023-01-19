@@ -83,6 +83,18 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
             }
             result
         }
+        Expr::If {
+            condition,
+            when_true,
+            when_false,
+        } => {
+            let cond_result = eval_expr(&local_context, context, condition);
+            if cond_result == Value::Bool(true) {
+                eval_expr(&local_context, context, when_true)
+            } else {
+                eval_expr(&local_context, context, when_false)
+            }
+        }
     }
 }
 
@@ -121,5 +133,9 @@ mod tests {
         eval_sub: ("1 - 2", Value::Int(-1)),
         eval_precedence: ("3 + 2 * 5", Value::Int(13)),
         eval_precedence_2: ("(3 + 2) * 5", Value::Int(25)),
+        eval_if: ("if true then 42 else 666", Value::Int(42)),
+        eval_else: ("if false then 42 else 666", Value::Int(666)),
+        eval_else_if: ("if false then 42 else if false then 666 else 51", Value::Int(51)),
+        eval_else_if_2: ("if false then 42 else if true then 666 else 51", Value::Int(666)),
     }
 }

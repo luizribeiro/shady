@@ -34,6 +34,7 @@ block = { "{" ~ (expr ~ ";")* ~ "}" }
 expr = {
   (prefix_op* ~ primary
   ~ (infix_op ~ prefix_op* ~ primary)*)
+  | if_expr
   | call
   | block
 }
@@ -53,6 +54,11 @@ mod = @{ "%" }
 pow = @{ "^" }
 
 prefix_op = @{ "!" | "-" }
+
+if_expr = {
+  "if" ~ expr ~ (("then" ~ expr) | block)
+  ~ ("else" ~ (expr | block))
+}
 
 int = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT+ | ASCII_DIGIT }
 
