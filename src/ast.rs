@@ -143,6 +143,8 @@ fn parse_value(pair: Pair<Rule>) -> Value {
 
 fn parse_expr(pair: Pair<Rule>) -> Expr {
     let pratt = PrattParser::new()
+        .op(Op::infix(Rule::or, Assoc::Left))
+        .op(Op::infix(Rule::and, Assoc::Left))
         .op(Op::infix(Rule::comparison_infix_op, Assoc::Left))
         .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
         .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))

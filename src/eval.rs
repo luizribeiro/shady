@@ -42,6 +42,17 @@ fn eval_comparison_op(op: &str, a: &Value, b: &Value) -> Value {
     }
 }
 
+fn eval_bool_op(op: &str, a: &Value, b: &Value) -> Value {
+    match (a, b) {
+        (Value::Bool(a), Value::Bool(b)) => match op {
+            "&&" => Value::Bool(*a && *b),
+            "||" => Value::Bool(*a || *b),
+            _ => panic!("unknown operator {}", op),
+        },
+        _ => panic!("invalid arguments for operator {}", op),
+    }
+}
+
 pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Value {
     match expr {
         Expr::Value(value) => value.clone(),
@@ -72,6 +83,7 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                 "==" | "!=" | "<" | ">" | "<=" | ">=" => {
                     eval_comparison_op(fn_name.as_str(), &args[0], &args[1])
                 }
+                "&&" | "||" => eval_bool_op(fn_name.as_str(), &args[0], &args[1]),
                 _ => {
                     if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
                         eval_expr(&local_context, &context, &fun.expr)
@@ -160,6 +172,12 @@ mod tests {
         eval_gt: ("2 > 1", Value::Bool(true)),
         eval_eq_str: (r#""a" == "b""#, Value::Bool(false)),
         eval_eq_str_2: (r#""a" == "a""#, Value::Bool(true)),
+        eval_and: ("true && false", Value::Bool(false)),
+        eval_and_2: ("true && true", Value::Bool(true)),
+        eval_or: ("false || false", Value::Bool(false)),
+        eval_or_2: ("false || true", Value::Bool(true)),
+        eval_bool_and_math: ("1 > 2 || 3 < 3 + 1", Value::Bool(true)),
+        eval_bool_precedence: ("true || false && false", Value::Bool(true)),
         eval_if: ("if true then 42 else 666", Value::Int(42)),
         eval_else: ("if false then 42 else 666", Value::Int(666)),
         eval_else_if: ("if false then 42 else if false then 666 else 51", Value::Int(51)),
