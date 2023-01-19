@@ -263,6 +263,36 @@ mod tests {
                 parameters: vec![],
             },
         );
+        assert_eq!(
+            parse_script("print $msg = echo $msg;").fn_definitions[0].signature,
+            FnSignature {
+                is_public: false,
+                is_infix: false,
+                fn_name: "print".to_string(),
+                parameters: vec![Parameter {
+                    name: "msg".to_string(),
+                    typ: Type::Str,
+                },],
+            },
+        );
+        assert_eq!(
+            parse_script("add $a: int $b: int = $a + $b;").fn_definitions[0].signature,
+            FnSignature {
+                is_public: false,
+                is_infix: false,
+                fn_name: "add".to_string(),
+                parameters: vec![
+                    Parameter {
+                        name: "a".to_string(),
+                        typ: Type::Int,
+                    },
+                    Parameter {
+                        name: "b".to_string(),
+                        typ: Type::Int,
+                    },
+                ],
+            },
+        );
     }
 
     macro_rules! parse_expr_tests {
