@@ -23,6 +23,25 @@ fn eval_math_op(op: &str, a: &Value, b: &Value) -> Value {
     }
 }
 
+fn eval_comparison_op(op: &str, a: &Value, b: &Value) -> Value {
+    match (a, b) {
+        (Value::Int(a), Value::Int(b)) => match op {
+            ">" => Value::Bool(a > b),
+            ">=" => Value::Bool(a >= b),
+            "<" => Value::Bool(a < b),
+            "<=" => Value::Bool(a <= b),
+            "==" => Value::Bool(a == b),
+            "!=" => Value::Bool(a != b),
+            _ => panic!("unknown operator {}", op),
+        },
+        (a, b) => match op {
+            "==" => Value::Bool(a == b),
+            "!=" => Value::Bool(a == b),
+            _ => panic!("unknown operator {}", op),
+        },
+    }
+}
+
 pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Value {
     match expr {
         Expr::Value(value) => value.clone(),
@@ -49,6 +68,9 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                 }
                 "+" | "-" | "*" | "/" | "%" | "^" => {
                     eval_math_op(fn_name.as_str(), &args[0], &args[1])
+                }
+                "==" | "!=" | "<" | ">" | "<=" | ">=" => {
+                    eval_comparison_op(fn_name.as_str(), &args[0], &args[1])
                 }
                 _ => {
                     if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
@@ -133,6 +155,11 @@ mod tests {
         eval_sub: ("1 - 2", Value::Int(-1)),
         eval_precedence: ("3 + 2 * 5", Value::Int(13)),
         eval_precedence_2: ("(3 + 2) * 5", Value::Int(25)),
+        eval_eq: ("1 == 1", Value::Bool(true)),
+        eval_neq: ("1 != 1", Value::Bool(false)),
+        eval_gt: ("2 > 1", Value::Bool(true)),
+        eval_eq_str: (r#""a" == "b""#, Value::Bool(false)),
+        eval_eq_str_2: (r#""a" == "a""#, Value::Bool(true)),
         eval_if: ("if true then 42 else 666", Value::Int(42)),
         eval_else: ("if false then 42 else 666", Value::Int(666)),
         eval_else_if: ("if false then 42 else if false then 666 else 51", Value::Int(51)),

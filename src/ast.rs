@@ -143,6 +143,7 @@ fn parse_value(pair: Pair<Rule>) -> Value {
 
 fn parse_expr(pair: Pair<Rule>) -> Expr {
     let pratt = PrattParser::new()
+        .op(Op::infix(Rule::comparison_infix_op, Assoc::Left))
         .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
         .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
         .op(Op::infix(Rule::infix_op, Assoc::Left))
@@ -342,6 +343,8 @@ mod tests {
         parse_mul: ("main = 1 * 2;", Expr::Call { fn_name: "*".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
         parse_div: ("main = 1 / 2;", Expr::Call { fn_name: "/".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
         parse_pow: ("main = 1 ^ 2;", Expr::Call { fn_name: "^".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
+        parse_eq: ("main = 1 == 1;", Expr::Call { fn_name: "==".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(1))] }),
+        parse_neq: ("main = 1 != 2;", Expr::Call { fn_name: "!=".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
         parse_call: ("main = add 1 2;", Expr::Call {
             fn_name: "add".to_string(),
             arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))],
