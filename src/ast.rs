@@ -243,6 +243,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn parse_function_signature() {
+        assert_eq!(
+            parse_script("public ans = 42;").fn_definitions[0].signature,
+            FnSignature {
+                is_public: true,
+                is_infix: false,
+                fn_name: "ans".to_string(),
+                parameters: vec![],
+            },
+        );
+        assert_eq!(
+            parse_script("ans = 42;").fn_definitions[0].signature,
+            FnSignature {
+                is_public: false,
+                is_infix: false,
+                fn_name: "ans".to_string(),
+                parameters: vec![],
+            },
+        );
+    }
+
     macro_rules! parse_expr_tests {
         ($($name:ident: $value:expr,)*) => {
             $(
