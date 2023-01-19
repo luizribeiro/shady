@@ -16,6 +16,7 @@ pub struct ProgramAST {
 pub enum Type {
     Int,
     Str,
+    Bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -42,6 +43,7 @@ pub struct FnDefinition {
 pub enum Value {
     Int(i64),
     String(String),
+    Bool(bool),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -61,6 +63,7 @@ fn parse_type(pair: Pair<Rule>) -> Type {
     match pair.as_rule() {
         Rule::type_int => Type::Int,
         Rule::type_str => Type::Str,
+        Rule::type_bool => Type::Bool,
         _ => unreachable!(),
     }
 }
@@ -102,6 +105,7 @@ fn is_value(rule: Rule) -> bool {
     match rule {
         Rule::int => true,
         Rule::str => true,
+        Rule::bool => true,
         _ => false,
     }
 }
@@ -115,6 +119,7 @@ fn parse_value(pair: Pair<Rule>) -> Value {
             s.pop();
             Value::String(s)
         }
+        Rule::bool => Value::Bool(pair.as_str().parse().unwrap()),
         _ => unreachable!(),
     }
 }
@@ -311,6 +316,8 @@ mod tests {
 
     parse_expr_tests! {
         parse_int: ("main = 1;", Expr::Value(Value::Int(1))),
+        parse_true: ("main = true;", Expr::Value(Value::Bool(true))),
+        parse_false: ("main = false;", Expr::Value(Value::Bool(false))),
         parse_str: ("main = \"hello\";", Expr::Value(Value::String("hello".to_string()))),
         parse_add: ("main = 1 + 2;", Expr::Call { fn_name: "+".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
         parse_sub: ("main = 1 - 2;", Expr::Call { fn_name: "-".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),

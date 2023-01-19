@@ -29,3 +29,7 @@ public child-processes = {
   echo "hello world";
   ls;
 };
+
+public act $isdog: bool = {
+  echo "hello world";
+};

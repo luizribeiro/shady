@@ -11,9 +11,10 @@ public = @{ "public" }
 infix = @{ "infix" }
 fn_name = @{ token }
 parameter = { variable ~ (":" ~ typ)? }
-typ = _{ type_int | type_str }
+typ = _{ type_int | type_str | type_bool }
 type_int = @{ "int" }
 type_str = @{ "str" }
+type_bool = @{ "bool" }
 
 fn_definition = {
   public?
@@ -38,7 +39,7 @@ expr = {
 }
 primary = _{ variable | value | "(" ~ expr ~ ")" }
 variable = @{ "$" ~ token }
-value = _{ int | str }
+value = _{ int | str | bool }
 
 infix_op =  _{ math_infix_op | bool_infix_op | custom_infix_op }
 custom_infix_op = @{ ("`" ~ token ~ "`") }
@@ -62,3 +63,5 @@ char = {
     | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
     | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
+
+bool = @{ "true" | "false" }

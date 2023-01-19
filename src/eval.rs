@@ -43,6 +43,7 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                     match args[0] {
                         Value::String(ref s) => println!("{}", s),
                         Value::Int(ref i) => println!("{}", i),
+                        Value::Bool(ref b) => println!("{}", b),
                     }
                     Value::Int(0)
                 }
@@ -62,6 +63,9 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                                 }
                                 Value::Int(i) => {
                                     cmd.arg(i.to_string());
+                                }
+                                Value::Bool(b) => {
+                                    cmd.arg(b.to_string());
                                 }
                             }
                         }

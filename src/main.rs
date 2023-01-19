@@ -57,6 +57,7 @@ fn main() {
                     let value = match param.typ {
                         ast::Type::Str => ast::Value::String(cli_value),
                         ast::Type::Int => ast::Value::Int(cli_value.parse().unwrap()),
+                        ast::Type::Bool => ast::Value::Bool(cli_value.parse().unwrap()),
                     };
                     local_context.vars.insert(param.name.clone(), value);
                 });
