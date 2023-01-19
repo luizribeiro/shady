@@ -81,3 +81,41 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
         }
     }
 }
+
+mod tests {
+    use super::*;
+    use crate::ast::parse_script;
+    use crate::ShadyArgs;
+
+    macro_rules! eval_tests {
+        ($($name:ident: $value:expr,)*) => {
+            $(
+                #[test]
+                fn $name() {
+                    let (input, expected) = $value;
+                    let program = parse_script(&format!("main = {};", input));
+                    let local_context = LocalContext { vars: HashMap::new() };
+                    let args = ShadyArgs {
+                        ast: false,
+                        filename: "test.shady".to_string(),
+                        args: Vec::new(),
+                    };
+                    let context = ShadyContext { args, program };
+                    let expr = &context.program.fn_definitions[0].expr;
+                    assert_eq!(
+                        eval_expr(&local_context, &context, expr),
+                        expected,
+                    );
+                }
+            )*
+        }
+    }
+
+    eval_tests! {
+        eval_value: ("1", Value::Int(1)),
+        eval_add: ("1 + 2", Value::Int(3)),
+        eval_sub: ("1 - 2", Value::Int(-1)),
+        eval_precedence: ("3 + 2 * 5", Value::Int(13)),
+        eval_precedence_2: ("(3 + 2) * 5", Value::Int(25)),
+    }
+}
