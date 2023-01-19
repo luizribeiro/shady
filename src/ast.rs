@@ -325,6 +325,14 @@ mod tests {
             fn_name: "add".to_string(),
             arguments: vec![Expr::Value(Value::String("hello".to_string()))],
         }),
+        parse_call_with_directory_as_arg: ("main = ls ./share/lib;", Expr::Call {
+            fn_name: "ls".to_string(),
+            arguments: vec![Expr::Value(Value::String("./share/lib".to_string()))],
+        }),
+        parse_call_with_home_dir_as_arg: ("main = ls ~/.config/;", Expr::Call {
+            fn_name: "ls".to_string(),
+            arguments: vec![Expr::Value(Value::String("~/.config/".to_string()))],
+        }),
         parse_call_with_variable: ("main = add $a;", Expr::Call {
             fn_name: "add".to_string(),
             arguments: vec![Expr::Variable("a".to_string())],

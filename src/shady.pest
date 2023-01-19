@@ -26,7 +26,7 @@ fn_definition = {
 
 call = { fn_name ~ fn_arg* }
 fn_arg = _{ value | unquoted_str_arg | expr }
-unquoted_str_arg = @{ (ASCII_ALPHANUMERIC | "-")+ }
+unquoted_str_arg = @{ (ASCII_ALPHANUMERIC | "-" | "/" | "." | "~")+ }
 
 block = { "{" ~ (expr ~ ";")* ~ "}" }
 
