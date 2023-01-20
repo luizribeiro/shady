@@ -178,9 +178,9 @@ mod tests {
         eval_or_2: ("false || true", Value::Bool(true)),
         eval_bool_and_math: ("1 > 2 || 3 < 3 + 1", Value::Bool(true)),
         eval_bool_precedence: ("true || false && false", Value::Bool(true)),
-        eval_if: ("if true then 42 else 666", Value::Int(42)),
-        eval_else: ("if false then 42 else 666", Value::Int(666)),
-        eval_else_if: ("if false then 42 else if false then 666 else 51", Value::Int(51)),
-        eval_else_if_2: ("if false then 42 else if true then 666 else 51", Value::Int(666)),
+        eval_if: ("if (true) 42 else 666", Value::Int(42)),
+        eval_else: ("if (false) 42 else 666", Value::Int(666)),
+        eval_else_if: ("if (false) 42 else if (false) 666 else 51", Value::Int(51)),
+        eval_else_if_2: ("if (false) 42 else if (true) 666 else 51", Value::Int(666)),
     }
 }

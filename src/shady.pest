@@ -58,10 +58,7 @@ pow = @{ "^" }
 
 prefix_op = @{ "!" | "-" }
 
-if_expr = {
-  "if" ~ expr ~ (("then" ~ expr) | block)
-  ~ ("else" ~ (expr | block))
-}
+if_expr = { "if" ~ "(" ~ expr ~ ")" ~ expr ~ ";"? ~ "else" ~ expr }
 
 int = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT+ | ASCII_DIGIT }
 
