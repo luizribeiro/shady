@@ -86,6 +86,14 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                 "&&" | "||" => eval_bool_op(fn_name.as_str(), &args[0], &args[1]),
                 _ => {
                     if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
+                        let mut local_context = LocalContext {
+                            vars: HashMap::new(),
+                        };
+                        for (i, param) in fun.signature.parameters.iter().enumerate() {
+                            local_context
+                                .vars
+                                .insert(param.name.clone(), args[i].clone());
+                        }
                         eval_expr(&local_context, &context, &fun.expr)
                     } else {
                         // run ls shell command
@@ -137,23 +145,29 @@ mod tests {
     use crate::ast::parse_script;
     use crate::ShadyArgs;
 
+    fn eval_script(script: &str) -> Value {
+        let program = parse_script(script);
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+        };
+        let args = ShadyArgs {
+            ast: false,
+            filename: "test.shady".to_string(),
+            args: Vec::new(),
+        };
+        let context = ShadyContext { args, program };
+        let expr = &context.program.fn_definitions[0].expr;
+        eval_expr(&local_context, &context, expr)
+    }
+
     macro_rules! eval_tests {
         ($($name:ident: $value:expr,)*) => {
             $(
                 #[test]
                 fn $name() {
                     let (input, expected) = $value;
-                    let program = parse_script(&format!("main = {};", input));
-                    let local_context = LocalContext { vars: HashMap::new() };
-                    let args = ShadyArgs {
-                        ast: false,
-                        filename: "test.shady".to_string(),
-                        args: Vec::new(),
-                    };
-                    let context = ShadyContext { args, program };
-                    let expr = &context.program.fn_definitions[0].expr;
                     assert_eq!(
-                        eval_expr(&local_context, &context, expr),
+                        eval_script(&format!("main = {};", input)),
                         expected,
                     );
                 }
@@ -182,5 +196,19 @@ mod tests {
         eval_else: ("if (false) 42 else 666", Value::Int(666)),
         eval_else_if: ("if (false) 42 else if (false) 666 else 51", Value::Int(51)),
         eval_else_if_2: ("if (false) 42 else if (true) 666 else 51", Value::Int(666)),
+    }
+
+    #[test]
+    fn eval_fib() {
+        assert_eq!(
+            eval_script(
+                r"#
+                    public main = fib 10;
+                    fib $x: int = if ($x < 2) $x
+                        else (fib ($x - 1)) + (fib ($x - 2));
+                #"
+            ),
+            Value::Int(55),
+        );
     }
 }
