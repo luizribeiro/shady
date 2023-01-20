@@ -3,13 +3,15 @@ COMMENT = _{ single_line_comment | multiline_comment }
 single_line_comment = _{ "#" ~ (!(NEWLINE) ~ ANY)* }
 multiline_comment = _{ "/*" ~ (!("*/") ~ ANY)* ~ "*/"}
 
+reserved = _{ "if" | "else" | "then" | public | infix | typ }
+
 program = { SOI ~ (fn_definition ~ ";")* ~ EOI }
 
 token = @{ (ASCII_ALPHA | "_" | "-")+ }
 
 public = @{ "public" }
 infix = @{ "infix" }
-fn_name = @{ token }
+fn_name = @{ !reserved ~ token }
 parameter = { variable ~ (":" ~ typ)? }
 typ = _{ type_int | type_str | type_bool }
 type_int = @{ "int" }
@@ -27,7 +29,7 @@ fn_definition = {
 
 call = { fn_name ~ fn_arg* }
 fn_arg = _{ value | unquoted_str_arg | expr }
-unquoted_str_arg = @{ (ASCII_ALPHANUMERIC | "-" | "/" | "." | "~")+ }
+unquoted_str_arg = @{ !reserved ~ (ASCII_ALPHANUMERIC | "-" | "/" | "." | "~")+ }
 
 block = { "{" ~ (expr ~ ";")* ~ "}" }
 

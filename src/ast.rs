@@ -432,5 +432,26 @@ mod tests {
                 ),
             },
         ),
+        parse_if_without_block_and_without_semicolon: (
+            r#"
+                main = if ($isdog) echo "dog"
+                    else echo "cat";
+            "#,
+            Expr::If {
+                condition: Box::new(Expr::Variable("isdog".to_string())),
+                when_true: Box::new(
+                    Expr::Call {
+                        fn_name: "echo".to_string(),
+                        arguments: vec![Expr::Value(Value::String("dog".to_string()))],
+                    },
+                ),
+                when_false: Box::new(
+                    Expr::Call {
+                        fn_name: "echo".to_string(),
+                        arguments: vec![Expr::Value(Value::String("cat".to_string()))],
+                    },
+                ),
+            },
+        ),
     }
 }
