@@ -9,6 +9,7 @@ mod eval;
 use clap::Parser;
 use std::collections::HashMap;
 
+// TODO: move this into args.rs (and rename args.rs as cli.rs)
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct ShadyArgs {
@@ -22,6 +23,8 @@ struct ShadyArgs {
 }
 
 pub struct ShadyContext {
+    // TODO: remove this from here and add just a filename
+    // cli info should not live here. this should be part of eval
     args: ShadyArgs,
     program: ast::ProgramAST,
 }
