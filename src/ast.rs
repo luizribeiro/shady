@@ -2,6 +2,7 @@ use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
 use std::fs;
+use std::hash::{Hash, Hasher};
 
 #[derive(Parser)]
 #[grammar = "shady.pest"]
@@ -12,7 +13,7 @@ pub struct ProgramAST {
     pub fn_definitions: Vec<FnDefinition>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Type {
     Int,
     Str,
@@ -31,6 +32,15 @@ pub struct FnSignature {
     pub is_infix: bool,
     pub fn_name: String,
     pub parameters: Vec<Parameter>,
+}
+
+impl Hash for FnSignature {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.fn_name.hash(state);
+        for param in &self.parameters {
+            param.typ.hash(state);
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

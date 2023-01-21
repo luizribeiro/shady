@@ -1,10 +1,129 @@
 use std::collections::HashMap;
 
-use crate::ast::{get_fn_by_name, Expr, ProgramAST, Value};
+use crate::ast::{get_fn_by_name, Expr, FnSignature, Parameter, ProgramAST, Type, Value};
+
+type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Value>>;
 
 pub struct ShadyContext {
     pub filename: String,
     pub program: ProgramAST,
+    builtins: BuiltinIndex,
+}
+
+impl Value {
+    fn get_type(&self) -> Type {
+        match self {
+            Value::Int(_) => Type::Int,
+            Value::String(_) => Type::Str,
+            Value::Bool(_) => Type::Bool,
+        }
+    }
+}
+
+trait PrimitiveValue {
+    fn value_type() -> Type;
+    fn from_value(value: Value) -> Self;
+    fn to_value(&self) -> Value;
+}
+
+impl PrimitiveValue for i64 {
+    fn value_type() -> Type {
+        Type::Int
+    }
+
+    fn from_value(value: Value) -> Self {
+        match value {
+            Value::Int(i) => i,
+            _ => panic!("Expected int value"),
+        }
+    }
+
+    fn to_value(&self) -> Value {
+        Value::Int(*self)
+    }
+}
+
+impl PrimitiveValue for String {
+    fn value_type() -> Type {
+        Type::Str
+    }
+
+    fn from_value(value: Value) -> Self {
+        match value {
+            Value::String(s) => s,
+            _ => panic!("Expected string value"),
+        }
+    }
+
+    fn to_value(&self) -> Value {
+        Value::String(self.clone())
+    }
+}
+
+impl PrimitiveValue for bool {
+    fn value_type() -> Type {
+        Type::Bool
+    }
+
+    fn from_value(value: Value) -> Self {
+        match value {
+            Value::Bool(b) => b,
+            _ => panic!("Expected bool value"),
+        }
+    }
+
+    fn to_value(&self) -> Value {
+        Value::Bool(*self)
+    }
+}
+
+trait BuiltinAdder {
+    fn add<
+        Ta: PrimitiveValue + 'static,
+        Tb: PrimitiveValue + 'static,
+        Tr: PrimitiveValue + 'static,
+    >(
+        &mut self,
+        name: &str,
+        fun: fn(Ta, Tb) -> Tr,
+    );
+}
+
+impl BuiltinAdder for BuiltinIndex {
+    fn add<
+        Ta: PrimitiveValue + 'static,
+        Tb: PrimitiveValue + 'static,
+        Tr: PrimitiveValue + 'static,
+    >(
+        &mut self,
+        name: &str,
+        fun: fn(Ta, Tb) -> Tr,
+    ) {
+        let signature = FnSignature {
+            fn_name: name.to_string(),
+            parameters: vec![
+                Parameter {
+                    name: "x".to_string(),
+                    typ: Ta::value_type(),
+                },
+                Parameter {
+                    name: "x".to_string(),
+                    typ: Tb::value_type(),
+                },
+            ],
+            is_public: true,
+            is_infix: false,
+        };
+        self.insert(
+            signature,
+            Box::new(move |args| {
+                let a = Ta::from_value(args[0].clone());
+                let b = Tb::from_value(args[1].clone());
+                let r = fun(a, b);
+                r.to_value()
+            }),
+        );
+    }
 }
 
 #[derive(Debug)]
@@ -13,51 +132,36 @@ pub struct LocalContext {
 }
 
 pub fn build_context(filename: String, program: ProgramAST) -> ShadyContext {
-    ShadyContext { filename, program }
-}
+    let mut builtins: BuiltinIndex = HashMap::new();
 
-fn eval_math_op(op: &str, a: &Value, b: &Value) -> Value {
-    match (a, b) {
-        (Value::Int(a), Value::Int(b)) => match op {
-            "+" => Value::Int(a + b),
-            "-" => Value::Int(a - b),
-            "*" => Value::Int(a * b),
-            "/" => Value::Int(a / b),
-            "%" => Value::Int(a % b),
-            "^" => Value::Int(a.pow(*b as u32)),
-            _ => panic!("unknown operator {}", op),
-        },
-        _ => panic!("invalid arguments for operator {}", op),
-    }
-}
+    builtins.add("+", |a: i64, b: i64| a + b);
+    builtins.add("-", |a: i64, b: i64| a - b);
+    builtins.add("*", |a: i64, b: i64| a * b);
+    builtins.add("/", |a: i64, b: i64| a / b);
+    builtins.add("%", |a: i64, b: i64| a % b);
+    builtins.add("^", |a: i64, b: i64| a.pow(b as u32));
 
-fn eval_comparison_op(op: &str, a: &Value, b: &Value) -> Value {
-    match (a, b) {
-        (Value::Int(a), Value::Int(b)) => match op {
-            ">" => Value::Bool(a > b),
-            ">=" => Value::Bool(a >= b),
-            "<" => Value::Bool(a < b),
-            "<=" => Value::Bool(a <= b),
-            "==" => Value::Bool(a == b),
-            "!=" => Value::Bool(a != b),
-            _ => panic!("unknown operator {}", op),
-        },
-        (a, b) => match op {
-            "==" => Value::Bool(a == b),
-            "!=" => Value::Bool(a == b),
-            _ => panic!("unknown operator {}", op),
-        },
-    }
-}
+    builtins.add(">", |a: i64, b: i64| a > b);
+    builtins.add(">=", |a: i64, b: i64| a >= b);
+    builtins.add("<", |a: i64, b: i64| a < b);
+    builtins.add("<=", |a: i64, b: i64| a <= b);
+    builtins.add("==", |a: i64, b: i64| a == b);
+    builtins.add("!=", |a: i64, b: i64| a != b);
 
-fn eval_bool_op(op: &str, a: &Value, b: &Value) -> Value {
-    match (a, b) {
-        (Value::Bool(a), Value::Bool(b)) => match op {
-            "&&" => Value::Bool(*a && *b),
-            "||" => Value::Bool(*a || *b),
-            _ => panic!("unknown operator {}", op),
-        },
-        _ => panic!("invalid arguments for operator {}", op),
+    builtins.add("&&", |a: bool, b: bool| a && b);
+    builtins.add("||", |a: bool, b: bool| a || b);
+    builtins.add("==", |a: String, b: String| a == b);
+    builtins.add("!=", |a: String, b: String| a != b);
+    builtins.add("==", |a: bool, b: bool| a == b);
+    builtins.add("!=", |a: bool, b: bool| a != b);
+
+    builtins.add("==", |a: String, b: String| a == b);
+    builtins.add("!=", |a: String, b: String| a != b);
+
+    ShadyContext {
+        filename,
+        program,
+        builtins,
     }
 }
 
@@ -85,15 +189,22 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                     }
                     Value::Int(0)
                 }
-                "+" | "-" | "*" | "/" | "%" | "^" => {
-                    eval_math_op(fn_name.as_str(), &args[0], &args[1])
-                }
-                "==" | "!=" | "<" | ">" | "<=" | ">=" => {
-                    eval_comparison_op(fn_name.as_str(), &args[0], &args[1])
-                }
-                "&&" | "||" => eval_bool_op(fn_name.as_str(), &args[0], &args[1]),
                 _ => {
-                    if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
+                    let signature = FnSignature {
+                        fn_name: fn_name.clone(),
+                        parameters: args
+                            .iter()
+                            .map(|a| Parameter {
+                                name: "x".to_string(),
+                                typ: a.get_type(),
+                            })
+                            .collect(),
+                        is_public: true,
+                        is_infix: false,
+                    };
+                    if let Some(builtin_fn) = context.builtins.get(&signature) {
+                        builtin_fn(args)
+                    } else if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
                         let mut local_context = LocalContext {
                             vars: HashMap::new(),
                         };
@@ -157,10 +268,7 @@ mod tests {
         let local_context = LocalContext {
             vars: HashMap::new(),
         };
-        let context = ShadyContext {
-            filename: "test.shady".to_string(),
-            program,
-        };
+        let context = build_context("test.shady".to_string(), program);
         let expr = &context.program.fn_definitions[0].expr;
         eval_expr(&local_context, &context, expr)
     }
