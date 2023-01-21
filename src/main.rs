@@ -7,6 +7,7 @@ mod cli;
 mod eval;
 
 use clap::Parser;
+use eval::ShadyContext;
 use std::collections::HashMap;
 
 #[derive(Parser, Debug)]
@@ -19,11 +20,6 @@ struct ShadyArgs {
 
     #[arg(allow_hyphen_values = true)]
     args: Vec<String>,
-}
-
-pub struct ShadyContext {
-    filename: String,
-    program: ast::ProgramAST,
 }
 
 fn main() {

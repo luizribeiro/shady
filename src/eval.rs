@@ -1,7 +1,11 @@
 use std::collections::HashMap;
 
-use crate::ast::{get_fn_by_name, Expr, Value};
-use crate::ShadyContext;
+use crate::ast::{get_fn_by_name, Expr, ProgramAST, Value};
+
+pub struct ShadyContext {
+    pub filename: String,
+    pub program: ProgramAST,
+}
 
 #[derive(Debug)]
 pub struct LocalContext {
