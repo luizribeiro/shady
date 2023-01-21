@@ -12,6 +12,10 @@ pub struct LocalContext {
     pub vars: HashMap<String, Value>,
 }
 
+pub fn build_context(filename: String, program: ProgramAST) -> ShadyContext {
+    ShadyContext { filename, program }
+}
+
 fn eval_math_op(op: &str, a: &Value, b: &Value) -> Value {
     match (a, b) {
         (Value::Int(a), Value::Int(b)) => match op {
