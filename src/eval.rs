@@ -21,7 +21,7 @@ impl Value {
     }
 }
 
-trait PrimitiveValue {
+pub trait PrimitiveValue {
     fn value_type() -> Type;
     fn from_value(value: Value) -> Self;
     fn to_value(&self) -> Value;

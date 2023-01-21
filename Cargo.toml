@@ -7,3 +7,4 @@ edition = "2021"
 clap = { version = "4.1.1", features = ["derive", "cargo"] }
 pest = "2.5.3"
 pest_derive = "2.5.3"
+shady-macros = { path = "shady-macros" }
