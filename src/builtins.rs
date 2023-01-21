@@ -63,6 +63,11 @@ fn int_lte_int(a: i64, b: i64) -> bool {
     a <= b
 }
 
+#[builtin]
+fn env(var_name: String, default: String) -> String {
+    std::env::var(var_name).unwrap_or(default)
+}
+
 pub fn setup_builtins(builtins: &mut BuiltinIndex) {
     setup_builtins!();
 
@@ -75,8 +80,4 @@ pub fn setup_builtins(builtins: &mut BuiltinIndex) {
 
     builtins.add("==", |a: String, b: String| a == b);
     builtins.add("!=", |a: String, b: String| a != b);
-
-    builtins.add("env", |name: String, default: String| {
-        std::env::var(name).unwrap_or(default)
-    });
 }
