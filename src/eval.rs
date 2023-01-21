@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use crate::ast::{get_fn_by_name, Expr, FnSignature, Parameter, ProgramAST, Type, Value};
+use crate::builtins;
 
-type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Value>>;
+pub type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Value>>;
 
 pub struct ShadyContext {
     pub filename: String,
@@ -77,7 +78,7 @@ impl PrimitiveValue for bool {
     }
 }
 
-trait BuiltinAdder {
+pub trait BuiltinAdder {
     fn add<
         Ta: PrimitiveValue + 'static,
         Tb: PrimitiveValue + 'static,
@@ -134,33 +135,7 @@ pub struct LocalContext {
 pub fn build_context(filename: String, program: ProgramAST) -> ShadyContext {
     let mut builtins: BuiltinIndex = HashMap::new();
 
-    builtins.add("+", |a: i64, b: i64| a + b);
-    builtins.add("-", |a: i64, b: i64| a - b);
-    builtins.add("*", |a: i64, b: i64| a * b);
-    builtins.add("/", |a: i64, b: i64| a / b);
-    builtins.add("%", |a: i64, b: i64| a % b);
-    builtins.add("^", |a: i64, b: i64| a.pow(b as u32));
-
-    builtins.add(">", |a: i64, b: i64| a > b);
-    builtins.add(">=", |a: i64, b: i64| a >= b);
-    builtins.add("<", |a: i64, b: i64| a < b);
-    builtins.add("<=", |a: i64, b: i64| a <= b);
-    builtins.add("==", |a: i64, b: i64| a == b);
-    builtins.add("!=", |a: i64, b: i64| a != b);
-
-    builtins.add("&&", |a: bool, b: bool| a && b);
-    builtins.add("||", |a: bool, b: bool| a || b);
-    builtins.add("==", |a: String, b: String| a == b);
-    builtins.add("!=", |a: String, b: String| a != b);
-    builtins.add("==", |a: bool, b: bool| a == b);
-    builtins.add("!=", |a: bool, b: bool| a != b);
-
-    builtins.add("==", |a: String, b: String| a == b);
-    builtins.add("!=", |a: String, b: String| a != b);
-
-    builtins.add("env", |name: String, default: String| {
-        std::env::var(name).unwrap_or(default)
-    });
+    builtins::setup_builtins(&mut builtins);
 
     ShadyContext {
         filename,
