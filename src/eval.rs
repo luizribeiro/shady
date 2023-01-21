@@ -143,19 +143,16 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
 mod tests {
     use super::*;
     use crate::ast::parse_script;
-    use crate::ShadyArgs;
 
     fn eval_script(script: &str) -> Value {
         let program = parse_script(script);
         let local_context = LocalContext {
             vars: HashMap::new(),
         };
-        let args = ShadyArgs {
-            ast: false,
+        let context = ShadyContext {
             filename: "test.shady".to_string(),
-            args: Vec::new(),
+            program,
         };
-        let context = ShadyContext { args, program };
         let expr = &context.program.fn_definitions[0].expr;
         eval_expr(&local_context, &context, expr)
     }

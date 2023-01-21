@@ -9,7 +9,6 @@ mod eval;
 use clap::Parser;
 use std::collections::HashMap;
 
-// TODO: move this into cli.rs
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct ShadyArgs {
@@ -23,9 +22,7 @@ struct ShadyArgs {
 }
 
 pub struct ShadyContext {
-    // TODO: remove this from here and add just a filename
-    // cli info should not live here. this should be part of eval
-    args: ShadyArgs,
+    filename: String,
     program: ast::ProgramAST,
 }
 
@@ -33,15 +30,18 @@ fn main() {
     let args = ShadyArgs::parse();
 
     let program = ast::parse_file(&args.filename);
-    let context = ShadyContext { args, program };
+    let context = ShadyContext {
+        filename: args.filename,
+        program,
+    };
 
-    if context.args.ast {
+    if args.ast {
         println!("{:#?}", context.program);
         return;
     }
 
-    let mut script_args = vec![context.args.filename.clone()];
-    script_args.extend(context.args.args.clone());
+    let mut script_args = vec![context.filename.clone()];
+    script_args.extend(args.args.clone());
     let cmd = cli::get_command(&context);
     let matches = cmd.get_matches_from(&script_args);
 
