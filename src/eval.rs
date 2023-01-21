@@ -158,6 +158,10 @@ pub fn build_context(filename: String, program: ProgramAST) -> ShadyContext {
     builtins.add("==", |a: String, b: String| a == b);
     builtins.add("!=", |a: String, b: String| a != b);
 
+    builtins.add("env", |name: String, default: String| {
+        std::env::var(name).unwrap_or(default)
+    });
+
     ShadyContext {
         filename,
         program,
