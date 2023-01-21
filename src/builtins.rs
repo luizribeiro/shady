@@ -1,7 +1,7 @@
 use shady_macros::{builtin, setup_builtins};
 
 use crate::ast::{FnSignature, Parameter};
-use crate::eval::{BuiltinAdder, BuiltinIndex, PrimitiveValue};
+use crate::eval::{BuiltinIndex, PrimitiveValue};
 
 #[builtin(+)]
 fn int_add_int(a: i64, b: i64) -> i64 {
@@ -63,6 +63,31 @@ fn int_lte_int(a: i64, b: i64) -> bool {
     a <= b
 }
 
+#[builtin(&&)]
+fn bool_and_bool(a: bool, b: bool) -> bool {
+    a && b
+}
+
+#[builtin(||)]
+fn bool_or_bool(a: bool, b: bool) -> bool {
+    a || b
+}
+
+#[builtin(==)]
+fn bool_eq_bool(a: bool, b: bool) -> bool {
+    a == b
+}
+
+#[builtin(==)]
+fn str_eq_str(a: String, b: String) -> bool {
+    a == b
+}
+
+#[builtin(!=)]
+fn str_neq_str(a: String, b: String) -> bool {
+    a != b
+}
+
 #[builtin]
 fn env(var_name: String, default: String) -> String {
     std::env::var(var_name).unwrap_or(default)
@@ -70,14 +95,4 @@ fn env(var_name: String, default: String) -> String {
 
 pub fn setup_builtins(builtins: &mut BuiltinIndex) {
     setup_builtins!();
-
-    builtins.add("&&", |a: bool, b: bool| a && b);
-    builtins.add("||", |a: bool, b: bool| a || b);
-    builtins.add("==", |a: String, b: String| a == b);
-    builtins.add("!=", |a: String, b: String| a != b);
-    builtins.add("==", |a: bool, b: bool| a == b);
-    builtins.add("!=", |a: bool, b: bool| a != b);
-
-    builtins.add("==", |a: String, b: String| a == b);
-    builtins.add("!=", |a: String, b: String| a != b);
 }
