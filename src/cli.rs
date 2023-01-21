@@ -53,7 +53,7 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) {
                 .for_each(|raw_cli_value| {
                     let cli_value: String = raw_cli_value.to_string_lossy().into_owned();
                     let value = match param.typ {
-                        ast::Type::Str => ast::Value::String(cli_value),
+                        ast::Type::Str => ast::Value::Str(cli_value),
                         ast::Type::Int => ast::Value::Int(cli_value.parse().unwrap()),
                         ast::Type::Bool => ast::Value::Bool(cli_value.parse().unwrap()),
                     };

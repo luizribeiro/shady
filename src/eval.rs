@@ -15,7 +15,7 @@ impl Value {
     fn get_type(&self) -> Type {
         match self {
             Value::Int(_) => Type::Int,
-            Value::String(_) => Type::Str,
+            Value::Str(_) => Type::Str,
             Value::Bool(_) => Type::Bool,
         }
     }
@@ -51,13 +51,13 @@ impl PrimitiveValue for String {
 
     fn from_value(value: Value) -> Self {
         match value {
-            Value::String(s) => s,
+            Value::Str(s) => s,
             _ => panic!("Expected string value"),
         }
     }
 
     fn to_value(&self) -> Value {
-        Value::String(self.clone())
+        Value::Str(self.clone())
     }
 }
 
@@ -162,7 +162,7 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
             match fn_name.as_str() {
                 "print" => {
                     match args[0] {
-                        Value::String(ref s) => println!("{}", s),
+                        Value::Str(ref s) => println!("{}", s),
                         Value::Int(ref i) => println!("{}", i),
                         Value::Bool(ref b) => println!("{}", b),
                     }
@@ -198,7 +198,7 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                         let mut cmd = std::process::Command::new(fn_name);
                         for arg in args {
                             match arg {
-                                Value::String(s) => {
+                                Value::Str(s) => {
                                     cmd.arg(s);
                                 }
                                 Value::Int(i) => {

@@ -52,7 +52,7 @@ pub struct FnDefinition {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     Int(i64),
-    String(String),
+    Str(String),
     Bool(bool),
 }
 
@@ -116,7 +116,7 @@ fn parse_call(pair: Pair<Rule>) -> Expr {
             Rule::expr => arguments.push(parse_expr(pair)),
             x if is_value(x) => arguments.push(Expr::Value(parse_value(pair))),
             Rule::unquoted_str_arg => {
-                arguments.push(Expr::Value(Value::String(pair.as_str().to_string())))
+                arguments.push(Expr::Value(Value::Str(pair.as_str().to_string())))
             }
             _ => unreachable!("unknown rule type: {:?}", pair.as_rule()),
         }
@@ -144,7 +144,7 @@ fn parse_value(pair: Pair<Rule>) -> Value {
             let mut s = pair.as_str().to_string();
             s.remove(0);
             s.pop();
-            Value::String(s)
+            Value::Str(s)
         }
         Rule::bool => Value::Bool(pair.as_str().parse().unwrap()),
         _ => unreachable!(),
@@ -349,7 +349,7 @@ mod tests {
         parse_int: ("main = 1;", Expr::Value(Value::Int(1))),
         parse_true: ("main = true;", Expr::Value(Value::Bool(true))),
         parse_false: ("main = false;", Expr::Value(Value::Bool(false))),
-        parse_str: ("main = \"hello\";", Expr::Value(Value::String("hello".to_string()))),
+        parse_str: ("main = \"hello\";", Expr::Value(Value::Str("hello".to_string()))),
         parse_add: ("main = 1 + 2;", Expr::Call { fn_name: "+".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
         parse_sub: ("main = 1 - 2;", Expr::Call { fn_name: "-".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
         parse_mul: ("main = 1 * 2;", Expr::Call { fn_name: "*".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
@@ -363,15 +363,15 @@ mod tests {
         }),
         parse_call_with_unquoted_str_arg: ("main = add hello;", Expr::Call {
             fn_name: "add".to_string(),
-            arguments: vec![Expr::Value(Value::String("hello".to_string()))],
+            arguments: vec![Expr::Value(Value::Str("hello".to_string()))],
         }),
         parse_call_with_directory_as_arg: ("main = ls ./share/lib;", Expr::Call {
             fn_name: "ls".to_string(),
-            arguments: vec![Expr::Value(Value::String("./share/lib".to_string()))],
+            arguments: vec![Expr::Value(Value::Str("./share/lib".to_string()))],
         }),
         parse_call_with_home_dir_as_arg: ("main = ls ~/.config/;", Expr::Call {
             fn_name: "ls".to_string(),
-            arguments: vec![Expr::Value(Value::String("~/.config/".to_string()))],
+            arguments: vec![Expr::Value(Value::Str("~/.config/".to_string()))],
         }),
         parse_call_with_variable: ("main = add $a;", Expr::Call {
             fn_name: "add".to_string(),
@@ -391,7 +391,7 @@ mod tests {
                     Expr::Call {
                         fn_name: "echo".to_string(),
                         arguments: vec![
-                            Expr::Value(Value::String("hi".to_string())),
+                            Expr::Value(Value::Str("hi".to_string())),
                         ],
                     },
                 ],
@@ -410,13 +410,13 @@ mod tests {
                 when_true: Box::new(Expr::Block {
                     statements: vec![Expr::Call {
                         fn_name: "echo".to_string(),
-                        arguments: vec![Expr::Value(Value::String("dog".to_string()))],
+                        arguments: vec![Expr::Value(Value::Str("dog".to_string()))],
                     }],
                 }),
                 when_false: Box::new(Expr::Block {
                     statements: vec![Expr::Call {
                         fn_name: "echo".to_string(),
-                        arguments: vec![Expr::Value(Value::String("cat".to_string()))],
+                        arguments: vec![Expr::Value(Value::Str("cat".to_string()))],
                     }],
                 }),
             },
@@ -431,13 +431,13 @@ mod tests {
                 when_true: Box::new(
                     Expr::Call {
                         fn_name: "echo".to_string(),
-                        arguments: vec![Expr::Value(Value::String("dog".to_string()))],
+                        arguments: vec![Expr::Value(Value::Str("dog".to_string()))],
                     },
                 ),
                 when_false: Box::new(
                     Expr::Call {
                         fn_name: "echo".to_string(),
-                        arguments: vec![Expr::Value(Value::String("cat".to_string()))],
+                        arguments: vec![Expr::Value(Value::Str("cat".to_string()))],
                     },
                 ),
             },
@@ -452,13 +452,13 @@ mod tests {
                 when_true: Box::new(
                     Expr::Call {
                         fn_name: "echo".to_string(),
-                        arguments: vec![Expr::Value(Value::String("dog".to_string()))],
+                        arguments: vec![Expr::Value(Value::Str("dog".to_string()))],
                     },
                 ),
                 when_false: Box::new(
                     Expr::Call {
                         fn_name: "echo".to_string(),
-                        arguments: vec![Expr::Value(Value::String("cat".to_string()))],
+                        arguments: vec![Expr::Value(Value::Str("cat".to_string()))],
                     },
                 ),
             },
