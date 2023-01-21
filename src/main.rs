@@ -2,14 +2,14 @@ extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 
-mod args;
 mod ast;
+mod cli;
 mod eval;
 
 use clap::Parser;
 use std::collections::HashMap;
 
-// TODO: move this into args.rs (and rename args.rs as cli.rs)
+// TODO: move this into cli.rs
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct ShadyArgs {
@@ -42,7 +42,7 @@ fn main() {
 
     let mut script_args = vec![context.args.filename.clone()];
     script_args.extend(context.args.args.clone());
-    let cmd = args::get_command(&context);
+    let cmd = cli::get_command(&context);
     let matches = cmd.get_matches_from(&script_args);
 
     let subcmd_name = matches.subcommand_name().unwrap_or("main");
