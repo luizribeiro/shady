@@ -33,10 +33,12 @@ jobs:
             -Coverflow-checks=off
             -Cpanic=abort
             -Zpanic_abort_tests
-      - name: Collect code coverage
+      - id: coverage
+        name: Collect code coverage
         uses: actions-rs/grcov@v0.1.5
       - name: Upload to Codecov
         uses: codecov/codecov-action@v3.1.1
         with:
           verbose: true
           fail_ci_if_error: true
+          files: ${{ steps.coverage.outputs.report }}
