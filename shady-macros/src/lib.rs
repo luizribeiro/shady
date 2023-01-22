@@ -57,7 +57,7 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
     let block = input.block.to_token_stream();
     ALL_BUILTINS.lock().unwrap().push(fname);
     quote! {
-        fn #setup_ident(builtins: &mut BuiltinIndex) {
+        pub fn #setup_ident(builtins: &mut BuiltinIndex) {
             let fun = |#params| #block;
             let signature = FnSignature {
                 fn_name: #fn_name.to_string(),
