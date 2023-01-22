@@ -27,14 +27,14 @@ fn main() {
 
     let program = ast::parse_file(&args.filename);
     if args.ast {
-        println!("{:#?}", program);
+        println!("{program:#?}");
         return;
     }
 
     let context = eval::build_context(args.filename.clone(), program);
 
     let mut script_args = vec![args.filename.clone()];
-    script_args.extend(args.args.clone());
+    script_args.extend(args.args);
 
     cli::run_fn(&context, &script_args);
 }

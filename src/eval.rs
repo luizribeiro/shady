@@ -35,21 +35,21 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
         Expr::Variable(var_name) => {
             let value = local_context.vars.get(var_name);
             if value.is_none() {
-                panic!("variable {} not found", var_name);
+                panic!("variable {var_name} not found");
             }
             value.unwrap().clone()
         }
         Expr::Call { fn_name, arguments } => {
             let mut args = Vec::new();
             for arg in arguments {
-                args.push(eval_expr(&local_context, &context, arg));
+                args.push(eval_expr(local_context, context, arg));
             }
             match fn_name.as_str() {
                 "print" => {
                     match args[0] {
-                        Value::Str(ref s) => println!("{}", s),
-                        Value::Int(ref i) => println!("{}", i),
-                        Value::Bool(ref b) => println!("{}", b),
+                        Value::Str(ref s) => println!("{s}"),
+                        Value::Int(ref i) => println!("{i}"),
+                        Value::Bool(ref b) => println!("{b}"),
                     }
                     Value::Int(0)
                 }
@@ -77,7 +77,7 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                                 .vars
                                 .insert(param.name.clone(), args[i].clone());
                         }
-                        eval_expr(&local_context, &context, &fun.expr)
+                        eval_expr(&local_context, context, &fun.expr)
                     } else {
                         // run ls shell command
                         let mut cmd = std::process::Command::new(fn_name);
@@ -104,7 +104,7 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
         Expr::Block { statements } => {
             let mut result = Value::Int(0);
             for statement in statements {
-                result = eval_expr(&local_context, context, statement);
+                result = eval_expr(local_context, context, statement);
             }
             result
         }
@@ -113,11 +113,11 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
             when_true,
             when_false,
         } => {
-            let cond_result = eval_expr(&local_context, context, condition);
+            let cond_result = eval_expr(local_context, context, condition);
             if cond_result == Value::Bool(true) {
-                eval_expr(&local_context, context, when_true)
+                eval_expr(local_context, context, when_true)
             } else {
-                eval_expr(&local_context, context, when_false)
+                eval_expr(local_context, context, when_false)
             }
         }
     }

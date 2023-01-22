@@ -116,12 +116,7 @@ fn parse_call(pair: Pair<Rule>) -> Expr {
 }
 
 fn is_value(rule: Rule) -> bool {
-    match rule {
-        Rule::int => true,
-        Rule::str => true,
-        Rule::bool => true,
-        _ => false,
-    }
+    matches!(rule, Rule::int | Rule::str | Rule::bool)
 }
 
 fn parse_value(pair: Pair<Rule>) -> Value {
@@ -227,14 +222,14 @@ fn parse_program(pair: Pair<Rule>) -> ProgramAST {
 }
 
 pub fn parse_script(text: &str) -> ProgramAST {
-    let mut pairs = ShadyParser::parse(Rule::program, &text).unwrap();
+    let mut pairs = ShadyParser::parse(Rule::program, text).unwrap();
     let pair = pairs.next().unwrap();
     assert!(pair.as_rule() == Rule::program);
     parse_program(pair)
 }
 
 pub fn parse_file(filename: &str) -> ProgramAST {
-    let unparsed_file = fs::read_to_string(&filename).unwrap();
+    let unparsed_file = fs::read_to_string(filename).unwrap();
     parse_script(&unparsed_file)
 }
 

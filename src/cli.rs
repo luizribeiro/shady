@@ -33,20 +33,19 @@ fn get_command(context: &ShadyContext) -> clap::Command {
         }
         cmd = cmd.subcommand(subcmd);
     }
-
-    return cmd;
+    cmd
 }
 
 pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) {
-    let cmd = get_command(&context);
-    let matches = cmd.get_matches_from(&*script_args);
+    let cmd = get_command(context);
+    let matches = cmd.get_matches_from(script_args);
 
     let mut local_context = eval::LocalContext {
         vars: HashMap::new(),
     };
     let subcmd_name = matches.subcommand_name().unwrap_or("main");
     let fun = ast::get_fn_by_name(&context.program, subcmd_name).unwrap();
-    let args = matches.subcommand_matches(&subcmd_name);
+    let args = matches.subcommand_matches(subcmd_name);
     if let Some(args) = args {
         for param in &fun.signature.parameters {
             args.get_raw(&param.name)
@@ -63,5 +62,5 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) {
         }
     }
 
-    eval::eval_expr(&local_context, &context, &fun.expr);
+    eval::eval_expr(&local_context, context, &fun.expr);
 }
