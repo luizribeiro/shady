@@ -43,11 +43,11 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
                     crate::ast::Parameter {
                         // FIXME: builtins have hacky param names in their signature
                         name: "x".to_string(),
-                        typ: crate::eval::value_type::<#ty>(),
+                        typ: crate::types::value_type::<#ty>(),
                     },
                 });
                 args_prog.extend(quote! {
-                    let #ident = crate::eval::from_value::<#ty>(args[#i].clone());
+                    let #ident = crate::types::from_value::<#ty>(args[#i].clone());
                 });
                 call_prog.extend(quote! { #ident, });
             }
@@ -72,7 +72,7 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
                 Box::new(move |args| {
                     #args_prog
                     let r = fun(#call_prog);
-                    crate::eval::to_value(r)
+                    crate::types::to_value(r)
                 }),
             );
         }
