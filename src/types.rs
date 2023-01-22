@@ -1,10 +1,11 @@
 use std::fmt::{Display, Formatter};
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Int,
     Str,
     Bool,
+    List(Box<Type>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,6 +13,10 @@ pub enum Value {
     Int(i64),
     Str(String),
     Bool(bool),
+    List {
+        inner_type: Type,
+        values: Vec<Value>,
+    },
 }
 
 impl Value {
@@ -20,6 +25,7 @@ impl Value {
             Value::Int(_) => Type::Int,
             Value::Str(_) => Type::Str,
             Value::Bool(_) => Type::Bool,
+            Value::List { inner_type, .. } => Type::List(Box::new(inner_type.clone())),
         }
     }
 }
@@ -30,6 +36,21 @@ impl Display for Value {
             Value::Int(i) => i.to_string(),
             Value::Str(s) => s.clone(),
             Value::Bool(b) => b.to_string(),
+            Value::List {
+                inner_type: _,
+                values,
+            } => {
+                let mut s = String::new();
+                s.push('[');
+                for (i, v) in values.iter().enumerate() {
+                    s.push_str(&v.to_string());
+                    if i < values.len() - 1 {
+                        s.push_str(", ");
+                    }
+                }
+                s.push(']');
+                s
+            }
         };
         write!(f, "{out}")
     }
@@ -92,6 +113,29 @@ impl PrimitiveValue for bool {
     }
 }
 
+impl<T: PrimitiveValue> PrimitiveValue for Vec<T> {
+    fn value_type() -> Type {
+        Type::List(Box::new(T::value_type()))
+    }
+
+    fn from_value(value: Value) -> Self {
+        match value {
+            Value::List { inner_type, values } => {
+                assert_eq!(inner_type, T::value_type());
+                values.into_iter().map(T::from_value).collect()
+            }
+            _ => panic!("Expected list value"),
+        }
+    }
+
+    fn to_value(&self) -> Value {
+        Value::List {
+            inner_type: T::value_type(),
+            values: self.iter().map(T::to_value).collect(),
+        }
+    }
+}
+
 pub fn value_type<T: PrimitiveValue>() -> Type {
     <T>::value_type()
 }
@@ -109,5 +153,6 @@ pub fn from_string(typ: &Type, s: &str) -> Value {
         Type::Int => Value::Int(s.parse().unwrap()),
         Type::Str => Value::Str(s.to_string()),
         Type::Bool => Value::Bool(s.parse().unwrap()),
+        Type::List(_) => panic!("Cannot convert string to list"),
     }
 }

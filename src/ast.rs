@@ -116,7 +116,7 @@ fn parse_call(pair: Pair<Rule>) -> Expr {
 }
 
 fn is_value(rule: Rule) -> bool {
-    matches!(rule, Rule::int | Rule::str | Rule::bool)
+    matches!(rule, Rule::int | Rule::str | Rule::bool | Rule::list)
 }
 
 fn parse_value(pair: Pair<Rule>) -> Value {
@@ -129,7 +129,14 @@ fn parse_value(pair: Pair<Rule>) -> Value {
             Value::Str(s)
         }
         Rule::bool => Value::Bool(pair.as_str().parse().unwrap()),
-        _ => unreachable!(),
+        Rule::list => {
+            let values: Vec<Value> = pair.into_inner().map(parse_value).collect();
+            // FIXME: deal with empty lists
+            // FIXME: deal with lists of mixed types
+            let inner_type = values[0].get_type();
+            Value::List { inner_type, values }
+        }
+        _ => unreachable!("unknown rule type: {:?}", pair.as_rule()),
     }
 }
 
@@ -329,6 +336,10 @@ mod tests {
 
     parse_expr_tests! {
         parse_int: ("main = 1;", Expr::Value(Value::Int(1))),
+        parse_list: ("main = [1, 2];", Expr::Value(Value::List {
+            inner_type: Type::Int,
+            values: vec![Value::Int(1), Value::Int(2)],
+        })),
         parse_true: ("main = true;", Expr::Value(Value::Bool(true))),
         parse_false: ("main = false;", Expr::Value(Value::Bool(false))),
         parse_str: ("main = \"hello\";", Expr::Value(Value::Str("hello".to_string()))),

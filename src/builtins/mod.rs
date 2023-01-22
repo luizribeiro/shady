@@ -7,10 +7,13 @@ use crate::builtins::bool::*;
 mod int;
 use crate::builtins::int::*;
 
-mod str;
-use crate::builtins::str::*;
+mod list;
+use crate::builtins::list::*;
 
 mod os;
 use crate::builtins::os::*;
+
+mod str;
+use crate::builtins::str::*;
 
 setup_builtins!();

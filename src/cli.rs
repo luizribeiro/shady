@@ -28,6 +28,7 @@ fn get_command(context: &ShadyContext) -> clap::Command {
                 Type::Int => arg.value_parser(value_parser!(i64)),
                 Type::Str => arg.value_parser(value_parser!(String)),
                 Type::Bool => arg.value_parser(value_parser!(bool)),
+                Type::List(_) => todo!(),
             };
             subcmd = subcmd.arg(arg);
         }
