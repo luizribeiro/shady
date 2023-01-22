@@ -20,6 +20,14 @@ impl Value {
             Value::Bool(_) => Type::Bool,
         }
     }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            Value::Int(i) => i.to_string(),
+            Value::Str(s) => s.clone(),
+            Value::Bool(b) => b.to_string(),
+        }
+    }
 }
 
 pub trait PrimitiveValue {

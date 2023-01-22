@@ -46,11 +46,7 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
             }
             match fn_name.as_str() {
                 "print" => {
-                    match args[0] {
-                        Value::Str(ref s) => println!("{s}"),
-                        Value::Int(ref i) => println!("{i}"),
-                        Value::Bool(ref b) => println!("{b}"),
-                    }
+                    println!("{}", args[0].to_string());
                     Value::Int(0)
                 }
                 _ => {
@@ -82,17 +78,7 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                         // run ls shell command
                         let mut cmd = std::process::Command::new(fn_name);
                         for arg in args {
-                            match arg {
-                                Value::Str(s) => {
-                                    cmd.arg(s);
-                                }
-                                Value::Int(i) => {
-                                    cmd.arg(i.to_string());
-                                }
-                                Value::Bool(b) => {
-                                    cmd.arg(b.to_string());
-                                }
-                            }
+                            cmd.arg(arg.to_string());
                         }
                         // TODO: properly deal with errors
                         let status = cmd.status().unwrap().code().unwrap();
