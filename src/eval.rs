@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::ast::{get_fn_by_name, Expr, FnSignature, Parameter, ProgramAST};
 use crate::builtins;
-use crate::types::{PrimitiveValue, Value};
+use crate::types::Value;
 
 pub type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Value>>;
 
@@ -10,55 +10,6 @@ pub struct ShadyContext {
     pub filename: String,
     pub program: ProgramAST,
     builtins: BuiltinIndex,
-}
-
-pub trait BuiltinAdder {
-    fn add<
-        Ta: PrimitiveValue + 'static,
-        Tb: PrimitiveValue + 'static,
-        Tr: PrimitiveValue + 'static,
-    >(
-        &mut self,
-        name: &str,
-        fun: fn(Ta, Tb) -> Tr,
-    );
-}
-
-impl BuiltinAdder for BuiltinIndex {
-    fn add<
-        Ta: PrimitiveValue + 'static,
-        Tb: PrimitiveValue + 'static,
-        Tr: PrimitiveValue + 'static,
-    >(
-        &mut self,
-        name: &str,
-        fun: fn(Ta, Tb) -> Tr,
-    ) {
-        let signature = FnSignature {
-            fn_name: name.to_string(),
-            parameters: vec![
-                Parameter {
-                    name: "x".to_string(),
-                    typ: Ta::value_type(),
-                },
-                Parameter {
-                    name: "x".to_string(),
-                    typ: Tb::value_type(),
-                },
-            ],
-            is_public: true,
-            is_infix: false,
-        };
-        self.insert(
-            signature,
-            Box::new(move |args| {
-                let a = Ta::from_value(args[0].clone());
-                let b = Tb::from_value(args[1].clone());
-                let r = fun(a, b);
-                r.to_value()
-            }),
-        );
-    }
 }
 
 #[derive(Debug)]
