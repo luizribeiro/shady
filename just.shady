@@ -1,0 +1,67 @@
+#!./target/debug/shady
+# TODO: lint
+# TODO: format
+#    - requires a way of reading stdout from a command
+#    - requires a way of piping that into another command as separate args
+# TODO: passthrough all parameters into check
+# TODO: hosts
+#    - same requirements as lint/format
+# TODO: deploy
+# TODO: default args (e.g. for rebuild type)
+# TODO: reboot (requires for loops)
+public check = nix flake check --accept-flake-config;
+public rebuild =
+  if ((os) == "linux") echo nixos-rebuild switch --flake ".#"
+  else echo darwin-rebuild switch --flake ".#";
+public update = {
+  nix flake update;
+  uptix;
+};
+public undo = {
+  git restore --staged .;
+  git clean -fd;
+  git checkout .;
+};
+public create-vm $hostname: str $id: int = proxmox-new $hostname $id;
+public destroy-vm $id: int = {
+  qm shutdown $id;
+  qm destroy $id;
+};
+public collect-garbage = {
+  nix-collect-garbage -d;
+  nix-store --optimise;
+  sudo docker system prune --all --force;
+};
+public restart-galera-cluster = {
+  sudo systemctl stop mysql;
+  sudo rm -f /var/lib/mysql/gvwstate.dat;
+  sudo rm -f /var/lib/mysql/grastate.dat;
+  ssh carbon sudo systemctl stop mysql;
+  ssh carbon sudo rm -f /var/lib/mysql/gvwstate.dat;
+  ssh carbon sudo rm -f /var/lib/mysql/grastate.dat;
+  ssh nitrogen sudo systemctl stop mysql;
+  ssh nitrogen sudo rm -f /var/lib/mysql/gvwstate.dat;
+  ssh nitrogen sudo rm -f /var/lib/mysql/grastate.dat;
+  sudo galera_new_cluster;
+  ssh carbon sudo systemctl start mysql;
+  ssh nitrogen sudo systemctl start mysql;
+};
+public ci = gh run list -L 5;
+public status = sudo monit summary -B;
+
+public act $isdog: bool = {
+  if ($isdog) {
+    print "woof";
+  } else {
+    print "meow";
+  };
+};
+
+fib_impl $x: int = if ($x < 2) $x
+  else (fib_impl ($x - 1)) + (fib_impl ($x - 2));
+public fib $x: int = print (fib_impl $x);
+
+public doit = echo (env "HOME" "nope");
+public doitagain = echo (addian 1 2);
+
+public a = echo (add_all [1, 2, 3]);

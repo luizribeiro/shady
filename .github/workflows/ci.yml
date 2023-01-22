@@ -22,9 +22,20 @@ jobs:
         run: cargo fmt --check
       - name: Run Tests
         run: cargo test
-      - name: rust-grcov
+        env:
+          CARGO_INCREMENTAL: 0
+          RUSTFLAGS: >-
+            -Cinstrument-coverage
+            -Zprofile
+            -Ccodegen-units=1
+            -Cinline-threshold=0
+            -Clink-dead-code
+            -Coverflow-checks=off
+            -Cpanic=abort
+            -Zpanic_abort_tests
+      - name: Collect code coverage
         uses: actions-rs/grcov@v0.1.5
-      - name: Codecov
+      - name: Upload to Codecov
         uses: codecov/codecov-action@v3.1.1
         with:
           verbose: true
