@@ -1,8 +1,5 @@
 use shady_macros::builtin;
 
-use crate::ast::{FnSignature, Parameter};
-use crate::eval::{BuiltinIndex, PrimitiveValue};
-
 #[builtin(&&)]
 fn bool_and_bool(a: bool, b: bool) -> bool {
     a && b

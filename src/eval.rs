@@ -78,6 +78,18 @@ impl PrimitiveValue for bool {
     }
 }
 
+pub fn value_type<T: PrimitiveValue>() -> Type {
+    <T>::value_type()
+}
+
+pub fn from_value<T: PrimitiveValue>(value: Value) -> T {
+    <T>::from_value(value)
+}
+
+pub fn to_value<T: PrimitiveValue>(value: T) -> Value {
+    <T>::to_value(&value)
+}
+
 pub trait BuiltinAdder {
     fn add<
         Ta: PrimitiveValue + 'static,

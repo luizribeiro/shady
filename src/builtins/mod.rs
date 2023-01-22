@@ -13,6 +13,4 @@ use crate::builtins::str::*;
 mod os;
 use crate::builtins::os::*;
 
-pub fn setup_builtins(builtins: &mut BuiltinIndex) {
-    setup_builtins!();
-}
+setup_builtins!();

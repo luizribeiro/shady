@@ -1,8 +1,5 @@
 use shady_macros::builtin;
 
-use crate::ast::{FnSignature, Parameter};
-use crate::eval::{BuiltinIndex, PrimitiveValue};
-
 #[builtin(+)]
 pub fn int_add_int(a: i64, b: i64) -> i64 {
     a + b

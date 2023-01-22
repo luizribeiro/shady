@@ -40,14 +40,14 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
                 };
                 let ty = &typed.ty;
                 params_prog.extend(quote! {
-                    Parameter {
+                    crate::ast::Parameter {
                         // FIXME: builtins have hacky param names in their signature
                         name: "x".to_string(),
-                        typ: #ty::value_type(),
+                        typ: crate::eval::value_type::<#ty>(),
                     },
                 });
                 args_prog.extend(quote! {
-                    let #ident = #ty::from_value(args[#i].clone());
+                    let #ident = crate::eval::from_value::<#ty>(args[#i].clone());
                 });
                 call_prog.extend(quote! { #ident, });
             }
@@ -57,9 +57,9 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
     let block = input.block.to_token_stream();
     ALL_BUILTINS.lock().unwrap().push(fname);
     quote! {
-        pub fn #setup_ident(builtins: &mut BuiltinIndex) {
+        pub fn #setup_ident(builtins: &mut crate::eval::BuiltinIndex) {
             let fun = |#params| #block;
-            let signature = FnSignature {
+            let signature = crate::ast::FnSignature {
                 fn_name: #fn_name.to_string(),
                 parameters: vec![
                     #params_prog
@@ -72,7 +72,7 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
                 Box::new(move |args| {
                     #args_prog
                     let r = fun(#call_prog);
-                    r.to_value()
+                    crate::eval::to_value(r)
                 }),
             );
         }
@@ -82,7 +82,7 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 pub fn setup_builtins(_item: TokenStream) -> TokenStream {
-    let x = ALL_BUILTINS
+    let setup_prog = ALL_BUILTINS
         .lock()
         .unwrap()
         .iter()
@@ -94,5 +94,10 @@ pub fn setup_builtins(_item: TokenStream) -> TokenStream {
         })
         .reduce(|a, b| quote! { #a #b })
         .unwrap();
-    x.into()
+    quote! {
+        pub fn setup_builtins(builtins: &mut BuiltinIndex) {
+            #setup_prog
+        }
+    }
+    .into()
 }
