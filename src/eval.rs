@@ -44,47 +44,39 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
             for arg in arguments {
                 args.push(eval_expr(local_context, context, arg));
             }
-            match fn_name.as_str() {
-                "print" => {
-                    println!("{}", args[0]);
-                    Value::Int(0)
+            let signature = FnSignature {
+                fn_name: fn_name.clone(),
+                parameters: args
+                    .iter()
+                    .map(|a| Parameter {
+                        name: "x".to_string(),
+                        typ: a.get_type(),
+                    })
+                    .collect(),
+                is_public: true,
+                is_infix: false,
+            };
+            if let Some(builtin_fn) = context.builtins.get(&signature) {
+                builtin_fn(args)
+            } else if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
+                let mut local_context = LocalContext {
+                    vars: HashMap::new(),
+                };
+                for (i, param) in fun.signature.parameters.iter().enumerate() {
+                    local_context
+                        .vars
+                        .insert(param.name.clone(), args[i].clone());
                 }
-                _ => {
-                    let signature = FnSignature {
-                        fn_name: fn_name.clone(),
-                        parameters: args
-                            .iter()
-                            .map(|a| Parameter {
-                                name: "x".to_string(),
-                                typ: a.get_type(),
-                            })
-                            .collect(),
-                        is_public: true,
-                        is_infix: false,
-                    };
-                    if let Some(builtin_fn) = context.builtins.get(&signature) {
-                        builtin_fn(args)
-                    } else if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
-                        let mut local_context = LocalContext {
-                            vars: HashMap::new(),
-                        };
-                        for (i, param) in fun.signature.parameters.iter().enumerate() {
-                            local_context
-                                .vars
-                                .insert(param.name.clone(), args[i].clone());
-                        }
-                        eval_expr(&local_context, context, &fun.expr)
-                    } else {
-                        // run ls shell command
-                        let mut cmd = std::process::Command::new(fn_name);
-                        for arg in args {
-                            cmd.arg(arg.to_string());
-                        }
-                        // TODO: properly deal with errors
-                        let status = cmd.status().unwrap().code().unwrap();
-                        Value::Int(status as i64)
-                    }
+                eval_expr(&local_context, context, &fun.expr)
+            } else {
+                // run ls shell command
+                let mut cmd = std::process::Command::new(fn_name);
+                for arg in args {
+                    cmd.arg(arg.to_string());
                 }
+                // TODO: properly deal with errors
+                let status = cmd.status().unwrap().code().unwrap();
+                Value::Int(status as i64)
             }
         }
         Expr::Block { statements } => {

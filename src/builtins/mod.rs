@@ -7,6 +7,9 @@ use crate::builtins::bool::*;
 mod int;
 use crate::builtins::int::*;
 
+mod io;
+use crate::builtins::io::*;
+
 mod list;
 use crate::builtins::list::*;
 
