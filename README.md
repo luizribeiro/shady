@@ -1,5 +1,8 @@
 # ⛱ shady
 
+[![CI](https://github.com/luizribeiro/shady/actions/workflows/ci.yml/badge.svg)](https://github.com/luizribeiro/shady/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/luizribeiro/shady/branch/main/graph/badge.svg?token=25KwvC0cSi)](https://codecov.io/gh/luizribeiro/shady)
+
 Shady is a prototype scripting shell, better described by ChatGPT:
 
 > Shady is the ultimate tool for the command line rogue. This shell scripting
