@@ -46,7 +46,7 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
             }
             match fn_name.as_str() {
                 "print" => {
-                    println!("{}", args[0].to_string());
+                    println!("{}", args[0]);
                     Value::Int(0)
                 }
                 _ => {

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::ast;
 use crate::eval;
 use crate::eval::ShadyContext;
-use crate::types::{Type, from_string};
+use crate::types::{from_string, Type};
 
 use clap::{command, value_parser, Arg, Command};
 

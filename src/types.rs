@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Type {
     Int,
@@ -20,13 +22,16 @@ impl Value {
             Value::Bool(_) => Type::Bool,
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
-        match self {
+impl Display for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let out = match self {
             Value::Int(i) => i.to_string(),
             Value::Str(s) => s.clone(),
             Value::Bool(b) => b.to_string(),
-        }
+        };
+        write!(f, "{out}")
     }
 }
 
