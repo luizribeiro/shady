@@ -254,6 +254,7 @@ mod tests {
     use super::*;
     use crate::ast::parse_script;
 
+    #[allow(dead_code)]
     fn eval_script(script: &str) -> Value {
         let program = parse_script(script);
         let local_context = LocalContext {
