@@ -90,3 +90,11 @@ pub fn from_value<T: PrimitiveValue>(value: Value) -> T {
 pub fn to_value<T: PrimitiveValue>(value: T) -> Value {
     <T>::to_value(&value)
 }
+
+pub fn from_string(typ: &Type, s: &str) -> Value {
+    match typ {
+        Type::Int => Value::Int(s.parse().unwrap()),
+        Type::Str => Value::Str(s.to_string()),
+        Type::Bool => Value::Bool(s.parse().unwrap()),
+    }
+}

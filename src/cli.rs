@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::ast;
 use crate::eval;
 use crate::eval::ShadyContext;
-use crate::types::{Type, Value};
+use crate::types::{Type, from_string};
 
 use clap::{command, value_parser, Arg, Command};
 
@@ -52,11 +52,7 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) {
                 .unwrap()
                 .for_each(|raw_cli_value| {
                     let cli_value: String = raw_cli_value.to_string_lossy().into_owned();
-                    let value = match param.typ {
-                        Type::Str => Value::Str(cli_value),
-                        Type::Int => Value::Int(cli_value.parse().unwrap()),
-                        Type::Bool => Value::Bool(cli_value.parse().unwrap()),
-                    };
+                    let value = from_string(&param.typ, &cli_value);
                     local_context.vars.insert(param.name.clone(), value);
                 });
         }
