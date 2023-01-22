@@ -8,20 +8,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Setup rust toolchain
-        uses: actions-rs/toolchain@v1.0.6
+      - uses: cachix/install-nix-action@v18
+      - uses: cachix/cachix-action@v12
         with:
-          toolchain: nightly
-          override: true
-          components: rustfmt, clippy
+          name: devenv
+      - name: Install devenv.sh
+        run: nix profile install github:cachix/devenv/v0.5
+        shell: sh
       - name: Build
-        run: cargo build
+        run: devenv shell cargo build
       - name: Lint
-        run: cargo clippy
+        run: devenv shell cargo clippy
       - name: Check Formatting
-        run: cargo fmt --check
+        run: devenv shell cargo fmt --check
       - name: Run Tests
-        run: cargo test
+        run: devenv shell cargo test
         env:
           CARGO_INCREMENTAL: 0
           RUSTFLAGS: >-
