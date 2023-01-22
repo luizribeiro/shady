@@ -16,4 +16,5 @@ Shady is a prototype scripting shell, better described by ChatGPT:
 > but all legal.
 >
 > If you want to stand out from the crowd of vanilla shell scripters, give Shady
-a try and see what shady things you're > truly capable of.
+a try and see what shady things you're
+> truly capable of.
