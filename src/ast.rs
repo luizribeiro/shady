@@ -1,3 +1,4 @@
+use crate::types::{Type, Value};
 use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
@@ -11,13 +12,6 @@ pub struct ShadyParser;
 #[derive(Debug)]
 pub struct ProgramAST {
     pub fn_definitions: Vec<FnDefinition>,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub enum Type {
-    Int,
-    Str,
-    Bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -47,13 +41,6 @@ impl Hash for FnSignature {
 pub struct FnDefinition {
     pub signature: FnSignature,
     pub expr: Expr,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Value {
-    Int(i64),
-    Str(String),
-    Bool(bool),
 }
 
 #[derive(Debug, PartialEq, Eq)]

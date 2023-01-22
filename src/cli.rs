@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::ast;
 use crate::eval;
 use crate::eval::ShadyContext;
+use crate::types::{Type, Value};
 
 use clap::{command, value_parser, Arg, Command};
 
@@ -24,9 +25,9 @@ fn get_command(context: &ShadyContext) -> clap::Command {
             let mut arg = Arg::new(string_to_static_str(param.name.to_string()));
             arg = arg.required(true);
             arg = match param.typ {
-                ast::Type::Int => arg.value_parser(value_parser!(i64)),
-                ast::Type::Str => arg.value_parser(value_parser!(String)),
-                ast::Type::Bool => arg.value_parser(value_parser!(bool)),
+                Type::Int => arg.value_parser(value_parser!(i64)),
+                Type::Str => arg.value_parser(value_parser!(String)),
+                Type::Bool => arg.value_parser(value_parser!(bool)),
             };
             subcmd = subcmd.arg(arg);
         }
@@ -53,9 +54,9 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) {
                 .for_each(|raw_cli_value| {
                     let cli_value: String = raw_cli_value.to_string_lossy().into_owned();
                     let value = match param.typ {
-                        ast::Type::Str => ast::Value::Str(cli_value),
-                        ast::Type::Int => ast::Value::Int(cli_value.parse().unwrap()),
-                        ast::Type::Bool => ast::Value::Bool(cli_value.parse().unwrap()),
+                        Type::Str => Value::Str(cli_value),
+                        Type::Int => Value::Int(cli_value.parse().unwrap()),
+                        Type::Bool => Value::Bool(cli_value.parse().unwrap()),
                     };
                     local_context.vars.insert(param.name.clone(), value);
                 });

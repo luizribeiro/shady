@@ -6,6 +6,7 @@ mod ast;
 mod builtins;
 mod cli;
 mod eval;
+mod types;
 
 use clap::Parser;
 

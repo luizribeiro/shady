@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-use crate::ast::{get_fn_by_name, Expr, FnSignature, Parameter, ProgramAST, Type, Value};
+use crate::ast::{get_fn_by_name, Expr, FnSignature, Parameter, ProgramAST};
 use crate::builtins;
+use crate::types::{Type, Value};
 
 pub type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Value>>;
 
