@@ -17,6 +17,14 @@ pub struct LocalContext {
     pub vars: HashMap<String, Value>,
 }
 
+impl LocalContext {
+    pub fn new_empty() -> Self {
+        Self {
+            vars: HashMap::new(),
+        }
+    }
+}
+
 pub fn build_context(filename: String, program: ProgramAST) -> ShadyContext {
     let mut builtins: BuiltinIndex = HashMap::new();
 
@@ -40,10 +48,10 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
             value.unwrap().clone()
         }
         Expr::Call { fn_name, arguments } => {
-            let mut args = Vec::new();
-            for arg in arguments {
-                args.push(eval_expr(local_context, context, arg));
-            }
+            let args: Vec<Value> = arguments
+                .iter()
+                .map(|arg| eval_expr(local_context, context, arg))
+                .collect();
             let signature = FnSignature {
                 fn_name: fn_name.clone(),
                 parameters: args
@@ -59,17 +67,16 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
             if let Some(builtin_fn) = context.builtins.get(&signature) {
                 builtin_fn(args)
             } else if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
-                let mut local_context = LocalContext {
-                    vars: HashMap::new(),
-                };
-                for (i, param) in fun.signature.parameters.iter().enumerate() {
-                    local_context
-                        .vars
-                        .insert(param.name.clone(), args[i].clone());
-                }
+                let vars: HashMap<String, Value> = fun
+                    .signature
+                    .parameters
+                    .iter()
+                    .enumerate()
+                    .map(|(i, param)| (param.name.clone(), args[i].clone()))
+                    .collect();
+                let local_context = LocalContext { vars };
                 eval_expr(&local_context, context, &fun.expr)
             } else {
-                // run ls shell command
                 let mut cmd = std::process::Command::new(fn_name);
                 for arg in args {
                     cmd.arg(arg.to_string());
@@ -101,6 +108,20 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
     }
 }
 
+pub fn eval_fn(context: &ShadyContext, fn_name: &str, args: Vec<Value>) -> Value {
+    // FIXME: this is pretty hacky, there's no need to build an expression to
+    // call a function. it would be better to simply populate the LocalContext
+    // and call the function directly
+    eval_expr(
+        &LocalContext::new_empty(),
+        context,
+        &Expr::Call {
+            fn_name: fn_name.to_string(),
+            arguments: args.iter().map(|a| Expr::Value(a.clone())).collect(),
+        },
+    )
+}
+
 mod tests {
     use super::*;
     use crate::ast::parse_script;
@@ -108,12 +129,8 @@ mod tests {
     #[allow(dead_code)]
     fn eval_script(script: &str) -> Value {
         let program = parse_script(script);
-        let local_context = LocalContext {
-            vars: HashMap::new(),
-        };
         let context = build_context("test.shady".to_string(), program);
-        let expr = &context.program.fn_definitions[0].expr;
-        eval_expr(&local_context, &context, expr)
+        eval_fn(&context, "main", vec![])
     }
 
     macro_rules! eval_tests {
