@@ -1,3 +1,5 @@
+*.profraw
+
 # Devenv
 .devenv*
 devenv.local.nix
