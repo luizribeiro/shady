@@ -1,10 +1,33 @@
 use std::collections::HashMap;
 
-use crate::ast::{get_fn_by_name, Expr, FnSignature, Parameter, ProgramAST};
+use crate::ast::{get_fn_by_name, Expr, FnDefinition, FnSignature, Parameter, ProgramAST};
 use crate::builtins;
 use crate::types::Value;
 
 pub type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Value>>;
+
+fn get_builtin_fn<'a>(
+    context: &'a ShadyContext,
+    fn_name: &'a str,
+    args: &[Value],
+) -> Option<&'a dyn Fn(Vec<Value>) -> Value> {
+    let signature = FnSignature {
+        fn_name: fn_name.to_string(),
+        parameters: args
+            .iter()
+            .map(|a| Parameter {
+                name: "".to_string(),
+                typ: a.get_type(),
+            })
+            .collect(),
+        is_public: true,
+        is_infix: false,
+    };
+    match context.builtins.get(&signature) {
+        Some(f) => Some(f.as_ref()),
+        None => None,
+    }
+}
 
 pub struct ShadyContext {
     pub filename: String,
@@ -15,14 +38,6 @@ pub struct ShadyContext {
 #[derive(Debug)]
 pub struct LocalContext {
     pub vars: HashMap<String, Value>,
-}
-
-impl LocalContext {
-    pub fn new_empty() -> Self {
-        Self {
-            vars: HashMap::new(),
-        }
-    }
 }
 
 pub fn build_context(filename: String, program: ProgramAST) -> ShadyContext {
@@ -52,39 +67,7 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                 .iter()
                 .map(|arg| eval_expr(local_context, context, arg))
                 .collect();
-            let signature = FnSignature {
-                fn_name: fn_name.clone(),
-                parameters: args
-                    .iter()
-                    .map(|a| Parameter {
-                        name: "".to_string(),
-                        typ: a.get_type(),
-                    })
-                    .collect(),
-                is_public: true,
-                is_infix: false,
-            };
-            if let Some(builtin_fn) = context.builtins.get(&signature) {
-                builtin_fn(args)
-            } else if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
-                let vars: HashMap<String, Value> = fun
-                    .signature
-                    .parameters
-                    .iter()
-                    .enumerate()
-                    .map(|(i, param)| (param.name.clone(), args[i].clone()))
-                    .collect();
-                let local_context = LocalContext { vars };
-                eval_expr(&local_context, context, &fun.expr)
-            } else {
-                let mut cmd = std::process::Command::new(fn_name);
-                for arg in args {
-                    cmd.arg(arg.to_string());
-                }
-                // TODO: properly deal with errors
-                let status = cmd.status().unwrap().code().unwrap();
-                Value::Int(status as i64)
-            }
+            eval_fn(context, fn_name, args)
         }
         Expr::Block { statements } => {
             let mut result = Value::Int(0);
@@ -105,18 +88,38 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
     }
 }
 
-pub fn eval_fn(context: &ShadyContext, fn_name: &str, args: Vec<Value>) -> Value {
-    // FIXME: this is pretty hacky, there's no need to build an expression to
-    // call a function. it would be better to simply populate the LocalContext
-    // and call the function directly
-    eval_expr(
-        &LocalContext::new_empty(),
-        context,
-        &Expr::Call {
-            fn_name: fn_name.to_string(),
-            arguments: args.iter().map(|a| Expr::Value(a.clone())).collect(),
-        },
-    )
+fn eval_fn(context: &ShadyContext, fn_name: &str, args: Vec<Value>) -> Value {
+    if let Some(builtin_fn) = get_builtin_fn(context, fn_name, &args) {
+        return builtin_fn(args);
+    }
+
+    if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
+        return eval_local_fn(context, fun, &args);
+    }
+
+    eval_shell_fn(fn_name, &args)
+}
+
+pub fn eval_shell_fn(fn_name: &str, args: &[Value]) -> Value {
+    let mut cmd = std::process::Command::new(fn_name);
+    for arg in args {
+        cmd.arg(arg.to_string());
+    }
+    // TODO: properly deal with errors
+    let status = cmd.status().unwrap().code().unwrap();
+    Value::Int(status as i64)
+}
+
+pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value]) -> Value {
+    let vars: HashMap<String, Value> = fun
+        .signature
+        .parameters
+        .iter()
+        .enumerate()
+        .map(|(i, param)| (param.name.clone(), args[i].clone()))
+        .collect();
+    let local_context = LocalContext { vars };
+    eval_expr(&local_context, context, &fun.expr)
 }
 
 mod tests {
@@ -127,7 +130,8 @@ mod tests {
     fn eval_script(script: &str) -> Value {
         let program = parse_script(script);
         let context = build_context("test.shady".to_string(), program);
-        eval_fn(&context, "main", vec![])
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        eval_local_fn(&context, fun, &[])
     }
 
     macro_rules! eval_tests {
