@@ -38,11 +38,11 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
                     syn::Pat::Ident(ident) => ident.ident.clone(),
                     _ => panic!("Invalid parameter"),
                 };
+                let param_name = ident.to_string();
                 let ty = &typed.ty;
                 params_prog.extend(quote! {
                     crate::ast::Parameter {
-                        // FIXME: builtins have hacky param names in their signature
-                        name: "x".to_string(),
+                        name: #param_name.to_string(),
                         typ: crate::types::value_type::<#ty>(),
                     },
                 });

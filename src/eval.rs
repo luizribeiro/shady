@@ -57,7 +57,7 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                 parameters: args
                     .iter()
                     .map(|a| Parameter {
-                        name: "x".to_string(),
+                        name: "".to_string(),
                         typ: a.get_type(),
                     })
                     .collect(),

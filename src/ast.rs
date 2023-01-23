@@ -14,13 +14,19 @@ pub struct ProgramAST {
     pub fn_definitions: Vec<FnDefinition>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq)]
 pub struct Parameter {
     pub name: String,
     pub typ: Type,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+impl PartialEq for Parameter {
+    fn eq(&self, other: &Self) -> bool {
+        self.typ == other.typ
+    }
+}
+
+#[derive(Debug, Eq)]
 pub struct FnSignature {
     pub is_public: bool,
     pub is_infix: bool,
@@ -34,6 +40,12 @@ impl Hash for FnSignature {
         for param in &self.parameters {
             param.typ.hash(state);
         }
+    }
+}
+
+impl PartialEq for FnSignature {
+    fn eq(&self, other: &Self) -> bool {
+        self.fn_name == other.fn_name && self.parameters == other.parameters
     }
 }
 
