@@ -31,7 +31,6 @@ jobs:
             -Cinline-threshold=0
             -Clink-dead-code
             -Coverflow-checks=off
-            -Cpanic=abort
       - id: coverage
         name: Collect code coverage
         uses: actions-rs/grcov@v0.1.5
