@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::ast::{get_fn_by_name, Expr, FnDefinition, FnSignature, Parameter, ProgramAST};
 use crate::builtins;
-use crate::types::Value;
+use crate::types::{Type, Value};
 
 pub type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Value>>;
 
@@ -85,6 +85,20 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
             Value::Bool(false) => eval_expr(local_context, context, when_false),
             _ => panic!("if condition must return a boolean"),
         },
+        Expr::List { elements } => {
+            let values: Vec<Value> = elements
+                .iter()
+                .map(|e| eval_expr(local_context, context, e))
+                .collect();
+            let inner_type = match values.len() {
+                0 => todo!("empty lists are not supported"),
+                _ => values[0].get_type(),
+            };
+            if !values.iter().all(|v| v.get_type() == inner_type) {
+                panic!("list elements must be of the same type");
+            }
+            Value::List { inner_type, values }
+        }
     }
 }
 
@@ -170,6 +184,10 @@ mod tests {
         eval_else: ("if (false) 42 else 666", Value::Int(666)),
         eval_else_if: ("if (false) 42 else if (false) 666 else 51", Value::Int(51)),
         eval_else_if_2: ("if (false) 42 else if (true) 666 else 51", Value::Int(666)),
+        eval_list: ("[1+2, 3+4]", Value::List {
+            inner_type: Type::Int,
+            values: vec![Value::Int(3), Value::Int(7)],
+        }),
     }
 
     #[test]

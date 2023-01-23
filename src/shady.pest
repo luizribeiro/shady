@@ -40,9 +40,9 @@ expr = {
   | call
   | block
 }
-primary = _{ variable | value | "(" ~ expr ~ ")" }
+primary = _{ variable | value | list | "(" ~ expr ~ ")" }
 variable = @{ "$" ~ token }
-value = _{ int | str | bool | list }
+value = _{ int | str | bool }
 
 infix_op =  _{ math_infix_op | comparison_infix_op | bool_infix_op | custom_infix_op }
 custom_infix_op = @{ ("`" ~ token ~ "`") }
@@ -74,5 +74,4 @@ char = {
 
 bool = @{ "true" | "false" }
 
-// FIXME: allow for lists to contain expressions instead of just values
-list = { "[" ~ (value ~ ",")* ~ value? ~ "]" }
+list = { "[" ~ (expr ~ ",")* ~ expr? ~ "]" }

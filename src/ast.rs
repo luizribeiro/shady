@@ -71,6 +71,9 @@ pub enum Expr {
         when_true: Box<Expr>,
         when_false: Box<Expr>,
     },
+    List {
+        elements: Vec<Expr>,
+    },
 }
 
 fn parse_type(pair: Pair<Rule>) -> Type {
@@ -128,7 +131,7 @@ fn parse_call(pair: Pair<Rule>) -> Expr {
 }
 
 fn is_value(rule: Rule) -> bool {
-    matches!(rule, Rule::int | Rule::str | Rule::bool | Rule::list)
+    matches!(rule, Rule::int | Rule::str | Rule::bool)
 }
 
 fn parse_value(pair: Pair<Rule>) -> Value {
@@ -141,13 +144,6 @@ fn parse_value(pair: Pair<Rule>) -> Value {
             Value::Str(s)
         }
         Rule::bool => Value::Bool(pair.as_str().parse().expect("bool parse error")),
-        Rule::list => {
-            let values: Vec<Value> = pair.into_inner().map(parse_value).collect();
-            // FIXME: deal with empty lists
-            // FIXME: deal with lists of mixed types
-            let inner_type = values[0].get_type();
-            Value::List { inner_type, values }
-        }
         _ => unreachable!("unknown rule type: {:?}", pair.as_rule()),
     }
 }
@@ -171,6 +167,16 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
             Rule::if_expr => parse_if(primary),
             x if is_value(x) => Expr::Value(parse_value(primary)),
             Rule::variable => Expr::Variable(primary.as_str()[1..].to_string()),
+            Rule::list => {
+                let elements: Vec<Expr> = primary
+                    .into_inner()
+                    .map(|pair| match pair.as_rule() {
+                        Rule::expr => parse_expr(pair),
+                        _ => unreachable!(),
+                    })
+                    .collect();
+                Expr::List { elements }
+            }
             _ => unreachable!("unknown rule type: {:?}", primary.as_rule()),
         })
         .map_prefix(|op, rhs| Expr::Call {
@@ -352,10 +358,30 @@ mod tests {
 
     parse_expr_tests! {
         parse_int: ("main = 1;", Expr::Value(Value::Int(1))),
-        parse_list: ("main = [1, 2];", Expr::Value(Value::List {
-            inner_type: Type::Int,
-            values: vec![Value::Int(1), Value::Int(2)],
-        })),
+        parse_list: ("main = [1, 2];", Expr::List {
+            elements: vec![
+                Expr::Value(Value::Int(1)),
+                Expr::Value(Value::Int(2)),
+            ],
+        }),
+        parse_of_expressions: ("main = [(1+2), (3*4)];", Expr::List {
+            elements: vec![
+                Expr::Call {
+                    fn_name: "+".to_string(),
+                    arguments: vec![
+                        Expr::Value(Value::Int(1)),
+                        Expr::Value(Value::Int(2)),
+                    ],
+                },
+                Expr::Call {
+                    fn_name: "*".to_string(),
+                    arguments: vec![
+                        Expr::Value(Value::Int(3)),
+                        Expr::Value(Value::Int(4)),
+                    ],
+                },
+            ],
+        }),
         parse_true: ("main = true;", Expr::Value(Value::Bool(true))),
         parse_false: ("main = false;", Expr::Value(Value::Bool(false))),
         parse_str: ("main = \"hello\";", Expr::Value(Value::Str("hello".to_string()))),
