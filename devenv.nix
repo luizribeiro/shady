@@ -8,5 +8,5 @@
   ];
 
   languages.rust.enable = true;
-  languages.rust.version = "latest";
+  languages.rust.version = "stable";
 }
