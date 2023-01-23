@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::ast::{get_fn_by_name, Expr, FnDefinition, FnSignature, Parameter, ProgramAST};
 use crate::builtins;
-use crate::types::{Type, Value};
+use crate::types::Value;
 
 pub type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Value>>;
 
@@ -136,11 +136,14 @@ pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value])
     eval_expr(&local_context, context, &fun.expr)
 }
 
+// rustc doesn't deal well with macros and these checks
+#[allow(dead_code)]
+#[allow(unused_imports)]
 mod tests {
     use super::*;
     use crate::ast::parse_script;
+    use crate::types::Type;
 
-    #[allow(dead_code)]
     fn eval_script(script: &str) -> Value {
         let program = parse_script(script);
         let context = build_context("test.shady".to_string(), program);
