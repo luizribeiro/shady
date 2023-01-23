@@ -55,7 +55,10 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     }
     let block = input.block.to_token_stream();
-    ALL_BUILTINS.lock().unwrap().push(fname);
+    ALL_BUILTINS
+        .lock()
+        .expect("could not obtain lock")
+        .push(fname);
     quote! {
         pub fn #setup_ident(builtins: &mut crate::eval::BuiltinIndex) {
             let fun = |#params| #block;
@@ -84,7 +87,7 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
 pub fn setup_builtins(_item: TokenStream) -> TokenStream {
     let setup_prog = ALL_BUILTINS
         .lock()
-        .unwrap()
+        .expect("could not obtain lock")
         .iter()
         .map(|s| {
             let ident = syn::Ident::new(s, proc_macro2::Span::call_site());
@@ -93,7 +96,7 @@ pub fn setup_builtins(_item: TokenStream) -> TokenStream {
             }
         })
         .reduce(|a, b| quote! { #a #b })
-        .unwrap();
+        .expect("failed to generate setup_builtins");
     quote! {
         pub fn setup_builtins(builtins: &mut BuiltinIndex) {
             #setup_prog

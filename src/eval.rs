@@ -57,10 +57,10 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
         Expr::Value(value) => value.clone(),
         Expr::Variable(var_name) => {
             let value = local_context.vars.get(var_name);
-            if value.is_none() {
-                panic!("variable {var_name} not found");
+            match value {
+                Some(v) => v.clone(),
+                None => panic!("variable {var_name} not found"),
             }
-            value.unwrap().clone()
         }
         Expr::Call { fn_name, arguments } => {
             let args: Vec<Value> = arguments
@@ -130,7 +130,7 @@ mod tests {
     fn eval_script(script: &str) -> Value {
         let program = parse_script(script);
         let context = build_context("test.shady".to_string(), program);
-        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let fun = get_fn_by_name(&context.program, "main").expect("main function not found");
         eval_local_fn(&context, fun, &[])
     }
 

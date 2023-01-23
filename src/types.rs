@@ -150,9 +150,9 @@ pub fn to_value<T: PrimitiveValue>(value: T) -> Value {
 
 pub fn from_string(typ: &Type, s: &str) -> Value {
     match typ {
-        Type::Int => Value::Int(s.parse().unwrap()),
+        Type::Int => Value::Int(s.parse().expect("Expected int")),
         Type::Str => Value::Str(s.to_string()),
-        Type::Bool => Value::Bool(s.parse().unwrap()),
+        Type::Bool => Value::Bool(s.parse().expect("Expected bool")),
         Type::List(_) => panic!("Cannot convert string to list"),
     }
 }

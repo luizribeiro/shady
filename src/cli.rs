@@ -45,12 +45,12 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) {
         vars: HashMap::new(),
     };
     let subcmd_name = matches.subcommand_name().unwrap_or("main");
-    let fun = ast::get_fn_by_name(&context.program, subcmd_name).unwrap();
-    let args = matches.subcommand_matches(subcmd_name);
-    if let Some(args) = args {
+    let fun = ast::get_fn_by_name(&context.program, subcmd_name)
+        .unwrap_or_else(|| panic!("function {subcmd_name} not found"));
+    if let Some(args) = matches.subcommand_matches(subcmd_name) {
         for param in &fun.signature.parameters {
             args.get_raw(&param.name)
-                .unwrap()
+                .unwrap_or_else(|| panic!("missing argument {}", param.name))
                 .for_each(|raw_cli_value| {
                     let cli_value: String = raw_cli_value.to_string_lossy().into_owned();
                     let value = from_string(&param.typ, &cli_value);

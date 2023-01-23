@@ -122,7 +122,7 @@ fn parse_call(pair: Pair<Rule>) -> Expr {
     }
 
     Expr::Call {
-        fn_name: fn_name.unwrap(),
+        fn_name: fn_name.expect("Rule::fn_name not found"),
         arguments,
     }
 }
@@ -133,14 +133,14 @@ fn is_value(rule: Rule) -> bool {
 
 fn parse_value(pair: Pair<Rule>) -> Value {
     match pair.as_rule() {
-        Rule::int => Value::Int(pair.as_str().parse().unwrap()),
+        Rule::int => Value::Int(pair.as_str().parse().expect("int parse error")),
         Rule::str => {
             let mut s = pair.as_str().to_string();
             s.remove(0);
             s.pop();
             Value::Str(s)
         }
-        Rule::bool => Value::Bool(pair.as_str().parse().unwrap()),
+        Rule::bool => Value::Bool(pair.as_str().parse().expect("bool parse error")),
         Rule::list => {
             let values: Vec<Value> = pair.into_inner().map(parse_value).collect();
             // FIXME: deal with empty lists
@@ -197,17 +197,20 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
             Rule::infix => is_infix = true,
             Rule::fn_name => fn_name = Some(pair.as_str().to_string()),
             Rule::parameter => {
-                let mut inner = pair.into_inner();
-                let var_name = inner.next().unwrap();
-                let typ = match inner.next() {
-                    // default to string
-                    None => Type::Str,
-                    Some(typ) => parse_type(typ),
+                let inner: Vec<Pair<Rule>> = pair.into_inner().collect();
+                let parameter = match &inner[..] {
+                    [var_name, typ] => Parameter {
+                        name: var_name.as_str()[1..].to_string(),
+                        typ: parse_type(typ.clone()),
+                    },
+                    [var_name] => Parameter {
+                        name: var_name.as_str()[1..].to_string(),
+                        // default to string
+                        typ: Type::Str,
+                    },
+                    _ => unreachable!(),
                 };
-                parameters.push(Parameter {
-                    name: var_name.as_str()[1..].to_string(),
-                    typ,
-                });
+                parameters.push(parameter)
             }
             Rule::expr => expr = Some(parse_expr(pair)),
             _ => unreachable!(),
@@ -218,10 +221,10 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
         signature: FnSignature {
             is_public,
             is_infix,
-            fn_name: fn_name.unwrap(),
+            fn_name: fn_name.expect("Rule::fn_name not found while parsing function"),
             parameters,
         },
-        expr: expr.unwrap(),
+        expr: expr.expect("Rule::expr not found while parsing function"),
     }
 }
 
@@ -241,14 +244,15 @@ fn parse_program(pair: Pair<Rule>) -> ProgramAST {
 }
 
 pub fn parse_script(text: &str) -> ProgramAST {
-    let mut pairs = ShadyParser::parse(Rule::program, text).unwrap();
-    let pair = pairs.next().unwrap();
+    let mut pairs = ShadyParser::parse(Rule::program, text).expect("parse error");
+    let pair = pairs.next().expect("no pairs returned by parser");
     assert!(pair.as_rule() == Rule::program);
     parse_program(pair)
 }
 
 pub fn parse_file(filename: &str) -> ProgramAST {
-    let unparsed_file = fs::read_to_string(filename).unwrap();
+    let unparsed_file =
+        fs::read_to_string(filename).unwrap_or_else(|_| panic!("file {filename} not found"));
     parse_script(&unparsed_file)
 }
 
