@@ -97,14 +97,11 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
             condition,
             when_true,
             when_false,
-        } => {
-            let cond_result = eval_expr(local_context, context, condition);
-            if cond_result == Value::Bool(true) {
-                eval_expr(local_context, context, when_true)
-            } else {
-                eval_expr(local_context, context, when_false)
-            }
-        }
+        } => match eval_expr(local_context, context, condition) {
+            Value::Bool(true) => eval_expr(local_context, context, when_true),
+            Value::Bool(false) => eval_expr(local_context, context, when_false),
+            _ => panic!("if condition must return a boolean"),
+        },
     }
 }
 
