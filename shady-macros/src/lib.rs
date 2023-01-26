@@ -4,7 +4,6 @@ extern crate quote;
 
 use lazy_static::lazy_static;
 
-use crate::quote::ToTokens;
 use proc_macro::*;
 use quote::quote;
 use std::sync::Mutex;
@@ -16,26 +15,25 @@ lazy_static! {
 
 #[proc_macro_attribute]
 pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as ItemFn);
-    let sig = input.sig;
-    let ident = sig.ident;
+    let builtin_fun = parse_macro_input!(input as ItemFn);
+    let sig = &builtin_fun.sig;
+    let builtin_fn_ident = &sig.ident;
     let override_fn_name = args.to_string();
     let fn_name = if override_fn_name.len() > 0 {
         override_fn_name
     } else {
-        ident.to_string()
+        builtin_fn_ident.to_string()
     };
-    let fname = format!("setup_{}_builtin", ident);
-    let setup_ident = syn::Ident::new(&fname, ident.span());
-    let params = sig.inputs;
+    let setup_fname = format!("setup_{}_builtin", builtin_fn_ident);
+    let setup_ident = syn::Ident::new(&setup_fname, builtin_fn_ident.span());
     let mut params_prog = quote! {};
     let mut args_prog = quote! {};
     let mut call_prog = quote! {};
-    for (i, param) in params.clone().into_iter().enumerate() {
+    for (i, param) in sig.inputs.clone().into_iter().enumerate() {
         match param {
             syn::FnArg::Typed(typed) => {
                 let ident = match typed.pat.as_ref() {
-                    syn::Pat::Ident(ident) => ident.ident.clone(),
+                    syn::Pat::Ident(builtin_fn_ident) => builtin_fn_ident.ident.clone(),
                     _ => panic!("Invalid parameter"),
                 };
                 let param_name = ident.to_string();
@@ -54,14 +52,15 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
             _ => panic!("Invalid parameter"),
         }
     }
-    let block = input.block.to_token_stream();
     ALL_BUILTINS
         .lock()
         .expect("could not obtain lock")
-        .push(fname);
+        .push(setup_fname);
     quote! {
+        #builtin_fun
+
         pub fn #setup_ident(builtins: &mut crate::eval::BuiltinIndex) {
-            let fun = |#params| #block;
+            let fun = #builtin_fn_ident;
             let signature = crate::ast::FnSignature {
                 fn_name: #fn_name.to_string(),
                 parameters: vec![
