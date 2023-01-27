@@ -1,12 +1,28 @@
 use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 
-#[derive(Debug, Clone, Eq, Hash)]
+#[derive(Debug, Clone, Eq)]
 pub enum Type {
     Int,
     Str,
     Bool,
     List(Box<Type>),
     Any,
+}
+
+impl Hash for Type {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Type::Int => state.write_u8(0),
+            Type::Str => state.write_u8(1),
+            Type::Bool => state.write_u8(2),
+            Type::List(t) => {
+                state.write_u8(3);
+                t.hash(state);
+            }
+            Type::Any => state.write_u8(4),
+        }
+    }
 }
 
 impl PartialEq for Type {

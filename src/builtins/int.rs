@@ -60,6 +60,7 @@ pub fn int_lte_int(a: i64, b: i64) -> bool {
     a <= b
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
 

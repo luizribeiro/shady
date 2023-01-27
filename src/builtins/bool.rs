@@ -15,6 +15,7 @@ fn bool_eq_bool(a: bool, b: bool) -> bool {
     a == b
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
 

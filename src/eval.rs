@@ -140,9 +140,7 @@ pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value])
     eval_expr(&local_context, context, &fun.expr)
 }
 
-// rustc doesn't deal well with macros and these checks
-#[allow(dead_code)]
-#[allow(unused_imports)]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::ast::parse_script;

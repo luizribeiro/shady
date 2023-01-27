@@ -10,6 +10,7 @@ fn os() -> String {
     std::env::consts::OS.to_string()
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
 

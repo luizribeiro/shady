@@ -15,6 +15,7 @@ fn first(list: Vec<Value>) -> Value {
     list[0].clone()
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
 
