@@ -136,6 +136,20 @@ impl<T: PrimitiveValue> PrimitiveValue for Vec<T> {
     }
 }
 
+impl PrimitiveValue for Value {
+    fn value_type() -> Type {
+        Type::List(Box::new(Type::Int))
+    }
+
+    fn from_value(value: Value) -> Self {
+        value
+    }
+
+    fn to_value(&self) -> Value {
+        self.clone()
+    }
+}
+
 pub fn value_type<T: PrimitiveValue>() -> Type {
     <T>::value_type()
 }

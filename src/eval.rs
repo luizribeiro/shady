@@ -191,6 +191,8 @@ mod tests {
             inner_type: Type::Int,
             values: vec![Value::Int(3), Value::Int(7)],
         }),
+        // FIXME: builtin lookup is broken
+        //eval_first: ("first [5, 3, 2]", Value::Int(5)),
     }
 
     #[test]
