@@ -37,9 +37,6 @@ pub struct FnSignature {
 impl Hash for FnSignature {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.fn_name.hash(state);
-        for param in &self.parameters {
-            param.typ.hash(state);
-        }
     }
 }
 

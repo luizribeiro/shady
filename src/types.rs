@@ -1,11 +1,26 @@
 use std::fmt::{Display, Formatter};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Eq, Hash)]
 pub enum Type {
     Int,
     Str,
     Bool,
     List(Box<Type>),
+    Any,
+}
+
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Type::Int, Type::Int) => true,
+            (Type::Str, Type::Str) => true,
+            (Type::Bool, Type::Bool) => true,
+            (Type::List(a), Type::List(b)) => a == b,
+            (Type::Any, _) => true,
+            (_, Type::Any) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,7 +153,7 @@ impl<T: PrimitiveValue> PrimitiveValue for Vec<T> {
 
 impl PrimitiveValue for Value {
     fn value_type() -> Type {
-        Type::List(Box::new(Type::Int))
+        Type::Any
     }
 
     fn from_value(value: Value) -> Self {
@@ -168,5 +183,6 @@ pub fn from_string(typ: &Type, s: &str) -> Value {
         Type::Str => Value::Str(s.to_string()),
         Type::Bool => Value::Bool(s.parse().expect("Expected bool")),
         Type::List(_) => panic!("Cannot convert string to list"),
+        Type::Any => unreachable!("Unexpected conversion from string to Any"),
     }
 }
