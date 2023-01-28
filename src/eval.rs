@@ -115,17 +115,10 @@ fn eval_fn(context: &ShadyContext, fn_name: &str, args: Vec<Value>) -> Value {
         return eval_local_fn(context, fun, &args);
     }
 
-    eval_shell_fn(fn_name, &args)
-}
-
-pub fn eval_shell_fn(fn_name: &str, args: &[Value]) -> Value {
-    let mut cmd = std::process::Command::new(fn_name);
-    for arg in args {
-        cmd.arg(arg.to_string());
+    Value::Proc {
+        program: fn_name.to_string(),
+        args: args.iter().map(|a| a.to_string()).collect(),
     }
-    // TODO: properly deal with errors
-    let status = cmd.status().unwrap().code().unwrap();
-    Value::Int(status as i64)
 }
 
 pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value]) -> Value {

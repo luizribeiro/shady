@@ -7,6 +7,7 @@ pub enum Type {
     Str,
     Bool,
     List(Box<Type>),
+    Proc,
     Any,
 }
 
@@ -20,7 +21,8 @@ impl Hash for Type {
                 state.write_u8(3);
                 t.hash(state);
             }
-            Type::Any => state.write_u8(4),
+            Type::Proc => state.write_u8(4),
+            Type::Any => state.write_u8(5),
         }
     }
 }
@@ -32,6 +34,7 @@ impl PartialEq for Type {
             (Type::Str, Type::Str) => true,
             (Type::Bool, Type::Bool) => true,
             (Type::List(a), Type::List(b)) => a == b,
+            (Type::Proc, Type::Proc) => true,
             (Type::Any, _) => true,
             (_, Type::Any) => true,
             _ => false,
@@ -48,6 +51,10 @@ pub enum Value {
         inner_type: Type,
         values: Vec<Value>,
     },
+    Proc {
+        program: String,
+        args: Vec<String>,
+    },
 }
 
 impl Value {
@@ -57,6 +64,7 @@ impl Value {
             Value::Str(_) => Type::Str,
             Value::Bool(_) => Type::Bool,
             Value::List { inner_type, .. } => Type::List(Box::new(inner_type.clone())),
+            Value::Proc { .. } => Type::Proc,
         }
     }
 }
@@ -82,6 +90,7 @@ impl Display for Value {
                 s.push(']');
                 s
             }
+            Value::Proc { .. } => "<proc object>".to_string(),
         };
         write!(f, "{out}")
     }
@@ -199,6 +208,7 @@ pub fn from_string(typ: &Type, s: &str) -> Value {
         Type::Str => Value::Str(s.to_string()),
         Type::Bool => Value::Bool(s.parse().expect("Expected bool")),
         Type::List(_) => panic!("Cannot convert string to list"),
+        Type::Proc => panic!("Cannot convert string to proc"),
         Type::Any => unreachable!("Unexpected conversion from string to Any"),
     }
 }

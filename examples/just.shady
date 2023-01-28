@@ -64,4 +64,6 @@ public fib $x: int = print (fib_impl $x);
 public doit = echo (env "HOME" "nope");
 public doitagain = echo (addian 1 2);
 
+public b = exec (ls -l);
+
 public a = echo (add_all [1, 2, 3]);

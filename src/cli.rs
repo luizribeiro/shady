@@ -29,7 +29,9 @@ fn get_command(context: &ShadyContext) -> clap::Command {
                 Type::Str => arg.value_parser(value_parser!(String)),
                 Type::Bool => arg.value_parser(value_parser!(bool)),
                 Type::List(_) => todo!(),
-                // TODO: make it impossible to have public methods with Any as a parameter
+                // TODO: make it impossible to have public methods with certain types as a
+                // parameter
+                Type::Proc => unreachable!(),
                 Type::Any => unreachable!(),
             };
             subcmd = subcmd.arg(arg);
