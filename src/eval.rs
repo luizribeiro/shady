@@ -24,10 +24,7 @@ fn get_builtin_fn<'a>(
         is_infix: false,
     };
     match context.builtins.get_key_value(&signature) {
-        Some((k, f)) => {
-            println!("found builtin: {:?}", k);
-            Some(f.as_ref())
-        }
+        Some((k, f)) => Some(f.as_ref()),
         None => None,
     }
 }
@@ -107,7 +104,6 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
 
 fn eval_fn(context: &ShadyContext, fn_name: &str, args: Vec<Value>) -> Value {
     if let Some(builtin_fn) = get_builtin_fn(context, fn_name, &args) {
-        println!("found a builtin {fn_name}");
         return builtin_fn(args);
     }
 
