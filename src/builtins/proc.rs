@@ -14,6 +14,11 @@ fn command(proc: Value) -> Command {
 }
 
 #[builtin]
+fn proc(program: String, args: Vec<String>) -> Value {
+    Value::Proc { program, args }
+}
+
+#[builtin]
 fn exec(proc: Value) -> i64 {
     command(proc)
         .status()
