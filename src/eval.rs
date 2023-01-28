@@ -24,7 +24,7 @@ fn get_builtin_fn<'a>(
         is_infix: false,
     };
     match context.builtins.get_key_value(&signature) {
-        Some((k, f)) => Some(f.as_ref()),
+        Some((_, f)) => Some(f.as_ref()),
         None => None,
     }
 }
