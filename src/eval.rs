@@ -29,6 +29,23 @@ fn get_builtin_fn<'a>(
     }
 }
 
+fn get_builtins_by_name<'a>(
+    context: &'a ShadyContext,
+    fn_name: &'a str,
+) -> Option<Vec<&'a FnSignature>> {
+    let mut result = Vec::new();
+    for (signature, _) in context.builtins.iter() {
+        if signature.fn_name == fn_name {
+            result.push(signature);
+        }
+    }
+    if result.is_empty() {
+        None
+    } else {
+        Some(result)
+    }
+}
+
 pub struct ShadyContext {
     pub filename: String,
     pub program: ProgramAST,
@@ -105,6 +122,10 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
 fn eval_fn(context: &ShadyContext, fn_name: &str, args: Vec<Value>) -> Value {
     if let Some(builtin_fn) = get_builtin_fn(context, fn_name, &args) {
         return builtin_fn(args);
+    }
+
+    if let Some(fns) = get_builtins_by_name(context, fn_name) {
+        panic!("function {fn_name} not found, did you mean one of these: {fns:?}",);
     }
 
     if let Some(fun) = get_fn_by_name(&context.program, fn_name) {

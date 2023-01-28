@@ -3,7 +3,7 @@ use shady_macros::builtin;
 
 #[builtin("+")]
 fn list_add_list(a: Vec<Value>, b: Vec<Value>) -> Vec<Value> {
-    let mut result = a.clone();
+    let mut result = a;
     result.extend(b);
     result
 }
