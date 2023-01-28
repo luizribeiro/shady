@@ -70,5 +70,6 @@ public all_nix_files = lines (stdout (
     -not -path "./.git/*"
     -not -path "./pkgs/node-packages/*"
 ));
+public lint = exec (proc nix-linter (all_nix_files));
 
 public a = echo (add_all [1, 2, 3]);
