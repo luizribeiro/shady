@@ -1,25 +1,20 @@
-use crate::types::Value;
+use crate::types::{Proc, Value};
 use shady_macros::builtin;
 use std::process::Command;
 
-fn command(proc: Value) -> Command {
-    let (program, args) = match proc {
-        Value::Proc { program, args } => (program, args),
-        _ => panic!("expected proc"),
-    };
-
-    let mut command = Command::new(program);
-    command.args(args);
+fn command(proc: Proc) -> Command {
+    let mut command = Command::new(proc.program);
+    command.args(proc.args);
     command
 }
 
 #[builtin]
 fn proc(program: String, args: Vec<String>) -> Value {
-    Value::Proc { program, args }
+    Value::Proc(Proc { program, args })
 }
 
 #[builtin]
-fn exec(proc: Value) -> i64 {
+fn exec(proc: Proc) -> i64 {
     command(proc)
         .status()
         .expect("failed to execute process")
@@ -28,7 +23,7 @@ fn exec(proc: Value) -> i64 {
 }
 
 #[builtin]
-fn stdout(proc: Value) -> String {
+fn stdout(proc: Proc) -> String {
     String::from_utf8(
         command(proc)
             .output()
@@ -36,4 +31,9 @@ fn stdout(proc: Value) -> String {
             .stdout,
     )
     .unwrap()
+}
+
+#[builtin("lines")]
+fn lines_proc(proc: Proc) -> Vec<String> {
+    stdout(proc).lines().map(|s| s.to_string()).collect()
 }

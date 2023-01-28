@@ -65,11 +65,11 @@ public doit = echo (env "HOME" "nope");
 public doitagain = echo (addian 1 2);
 
 public b = exec (ls -l);
-public all_nix_files = lines (stdout (
+public all_nix_files = lines (
   find . -name "*.nix"
     -not -path "./.git/*"
     -not -path "./pkgs/node-packages/*"
-));
+);
 public lint = exec (proc nix-linter (all_nix_files));
 
 public a = echo (add_all [1, 2, 3]);

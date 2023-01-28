@@ -43,6 +43,12 @@ impl PartialEq for Type {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Proc {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     Int(i64),
     Str(String),
@@ -51,10 +57,7 @@ pub enum Value {
         inner_type: Type,
         values: Vec<Value>,
     },
-    Proc {
-        program: String,
-        args: Vec<String>,
-    },
+    Proc(Proc),
 }
 
 impl Value {
@@ -127,7 +130,7 @@ impl PrimitiveValue for String {
     fn from_value(value: Value) -> Self {
         match value {
             Value::Str(s) => s,
-            _ => panic!("Expected string value"),
+            _ => panic!("Expected string value, got {:?}", value),
         }
     }
 
@@ -173,6 +176,23 @@ impl<T: PrimitiveValue> PrimitiveValue for Vec<T> {
             inner_type: T::value_type(),
             values: self.iter().map(T::to_value).collect(),
         }
+    }
+}
+
+impl PrimitiveValue for Proc {
+    fn value_type() -> Type {
+        Type::Proc
+    }
+
+    fn from_value(value: Value) -> Self {
+        match value {
+            Value::Proc(p) => p,
+            _ => panic!("Expected proc value"),
+        }
+    }
+
+    fn to_value(&self) -> Value {
+        Value::Proc(self.clone())
     }
 }
 

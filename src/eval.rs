@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::ast::{get_fn_by_name, Expr, FnDefinition, FnSignature, Parameter, ProgramAST};
 use crate::builtins;
-use crate::types::Value;
+use crate::types::{Proc, Value};
 
 pub type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Value>>;
 
@@ -132,10 +132,10 @@ fn eval_fn(context: &ShadyContext, fn_name: &str, args: Vec<Value>) -> Value {
         return eval_local_fn(context, fun, &args);
     }
 
-    Value::Proc {
+    Value::Proc(Proc {
         program: fn_name.to_string(),
         args: args.iter().map(|a| a.to_string()).collect(),
-    }
+    })
 }
 
 pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value]) -> Value {
