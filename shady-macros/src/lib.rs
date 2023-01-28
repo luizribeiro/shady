@@ -7,7 +7,7 @@ use lazy_static::lazy_static;
 use proc_macro::*;
 use quote::quote;
 use std::sync::Mutex;
-use syn::{parse_macro_input, ItemFn};
+use syn::{parse_macro_input, AttributeArgs, ItemFn};
 
 lazy_static! {
     static ref ALL_BUILTINS: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -18,12 +18,34 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
     let builtin_fun = parse_macro_input!(input as ItemFn);
     let sig = &builtin_fun.sig;
     let builtin_fn_ident = &sig.ident;
-    let override_fn_name = args.to_string();
-    let fn_name = if override_fn_name.len() > 0 {
-        override_fn_name
-    } else {
-        builtin_fn_ident.to_string()
-    };
+    let mut fn_name = builtin_fn_ident.to_string();
+    // TODO: implement support for varargs
+    let mut _is_varargs = false;
+
+    let args = parse_macro_input!(args as AttributeArgs);
+    for arg in args {
+        match arg {
+            syn::NestedMeta::Meta(m) => match m {
+                syn::Meta::NameValue(nv) => {
+                    let name = nv.path.get_ident().unwrap().to_string();
+                    let value = match nv.lit {
+                        syn::Lit::Bool(b) => b.value(),
+                        _ => panic!("Unsupported literal type"),
+                    };
+                    match name.as_str() {
+                        "vargs" => _is_varargs = value,
+                        _ => panic!("Unsupported attribute"),
+                    }
+                }
+                _ => {}
+            },
+            syn::NestedMeta::Lit(l) => match l {
+                syn::Lit::Str(s) => fn_name = s.value(),
+                _ => {}
+            },
+        }
+    }
+
     let setup_fname = format!("setup_{}_builtin", builtin_fn_ident);
     let setup_ident = syn::Ident::new(&setup_fname, builtin_fn_ident.span());
     let mut params_prog = quote! {};
