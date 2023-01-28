@@ -46,6 +46,7 @@ impl PartialEq for Type {
 pub struct Proc {
     pub program: String,
     pub args: Vec<String>,
+    pub stdout: Option<Box<Proc>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

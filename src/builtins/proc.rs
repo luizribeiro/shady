@@ -1,23 +1,41 @@
 use crate::types::{Proc, Value};
 use shady_macros::builtin;
-use std::process::{Child, Command, Output};
+use std::process::{Child, Command, Output, Stdio};
 
-fn spawn(proc: Proc) -> std::io::Result<Child> {
-    let mut command = Command::new(proc.program);
-    command.args(proc.args);
-    command.spawn()
+fn custom_spawn<F: FnMut(&mut Command)>(proc: &Proc, mut fun: F) -> Child {
+    let mut command = Command::new(&proc.program);
+    command.args(&proc.args);
+    fun(&mut command);
+    command.spawn().expect("Failed to execute process")
+}
+
+fn spawn(proc: Proc) -> Child {
+    if let Some(ref stdout) = proc.stdout {
+        let mut child = custom_spawn(&proc, |command| {
+            command.stdout(Stdio::piped());
+        });
+
+        custom_spawn(stdout, |command| {
+            command.stdin(child.stdout.take().unwrap());
+        })
+    } else {
+        custom_spawn(&proc, |_command| {})
+    }
 }
 
 fn spawn_and_wait(proc: Proc) -> Output {
     spawn(proc)
-        .expect("Failed to execute process")
         .wait_with_output()
         .expect("Failed to wait on child")
 }
 
 #[builtin]
 fn proc(program: String, args: Vec<String>) -> Value {
-    Value::Proc(Proc { program, args })
+    Value::Proc(Proc {
+        program,
+        args,
+        stdout: None,
+    })
 }
 
 #[builtin]
@@ -33,4 +51,12 @@ fn stdout(proc: Proc) -> String {
 #[builtin("lines")]
 fn lines_proc(proc: Proc) -> Vec<String> {
     stdout(proc).lines().map(|s| s.to_string()).collect()
+}
+
+#[builtin(">")]
+fn proc_into_prod(a: Proc, b: Proc) -> Proc {
+    Proc {
+        stdout: Some(Box::new(b)),
+        ..a
+    }
 }

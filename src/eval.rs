@@ -135,6 +135,7 @@ fn eval_fn(context: &ShadyContext, fn_name: &str, args: Vec<Value>) -> Value {
     Value::Proc(Proc {
         program: fn_name.to_string(),
         args: args.iter().map(|a| a.to_string()).collect(),
+        stdout: None,
     })
 }
 
