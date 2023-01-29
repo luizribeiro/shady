@@ -2,29 +2,15 @@ use std::collections::HashMap;
 
 use crate::ast::{get_fn_by_name, Expr, FnDefinition, FnSignature, Parameter, ProgramAST};
 use crate::builtins;
-use crate::types::{Proc, Value};
+use crate::types::{Proc, Type, Value};
 
 pub type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Value>>;
 
 fn get_builtin_fn<'a>(
     context: &'a ShadyContext,
-    fn_name: &'a str,
-    args: &[Value],
-    is_infix: bool,
+    signature: &'a FnSignature,
 ) -> Option<&'a dyn Fn(Vec<Value>) -> Value> {
-    let signature = FnSignature {
-        fn_name: fn_name.to_string(),
-        parameters: args
-            .iter()
-            .map(|a| Parameter {
-                name: "".to_string(),
-                typ: a.get_type(),
-            })
-            .collect(),
-        is_public: true,
-        is_infix,
-    };
-    match context.builtins.get_key_value(&signature) {
+    match context.builtins.get_key_value(signature) {
         Some((_, f)) => Some(f.as_ref()),
         None => None,
     }
@@ -80,17 +66,7 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                 None => panic!("variable {var_name} not found"),
             }
         }
-        Expr::Call {
-            fn_name,
-            arguments,
-            is_infix,
-        } => {
-            let args: Vec<Value> = arguments
-                .iter()
-                .map(|arg| eval_expr(local_context, context, arg))
-                .collect();
-            eval_fn(context, fn_name, args, *is_infix)
-        }
+        Expr::Call { .. } => eval_fn(local_context, context, expr),
         Expr::Block { statements } => {
             let mut result = Value::Int(0);
             for statement in statements {
@@ -124,22 +100,54 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
     }
 }
 
-fn eval_fn(context: &ShadyContext, fn_name: &str, args: Vec<Value>, is_infix: bool) -> Value {
-    if let Some(builtin_fn) = get_builtin_fn(context, fn_name, &args, is_infix) {
-        return builtin_fn(args);
+fn build_signature(call: &Expr, types: Vec<Type>) -> FnSignature {
+    match call {
+        Expr::Call {
+            fn_name, is_infix, ..
+        } => FnSignature {
+            fn_name: fn_name.to_string(),
+            parameters: types
+                .iter()
+                .map(|t| Parameter {
+                    name: "".to_string(),
+                    typ: t.clone(),
+                })
+                .collect(),
+            is_public: true,
+            is_infix: *is_infix,
+        },
+        _ => panic!("not a call"),
+    }
+}
+
+fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Value {
+    let arguments = match expr {
+        Expr::Call { arguments, .. } => arguments
+            .iter()
+            .map(|arg| eval_expr(local_context, context, arg))
+            .collect::<Vec<Value>>(),
+        _ => panic!("not a call"),
+    };
+    let signature = build_signature(expr, arguments.iter().map(|a| a.get_type()).collect());
+
+    if let Some(builtin_fn) = get_builtin_fn(context, &signature) {
+        return builtin_fn(arguments);
     }
 
-    if let Some(fns) = get_builtins_by_name(context, fn_name) {
-        panic!("function {fn_name} not found, did you mean one of these: {fns:?}",);
+    if let Some(fns) = get_builtins_by_name(context, &signature.fn_name) {
+        panic!(
+            "function {} not found, did you mean one of these: {:?}",
+            signature.fn_name, fns,
+        );
     }
 
-    if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
-        return eval_local_fn(context, fun, &args);
+    if let Some(fun) = get_fn_by_name(&context.program, &signature.fn_name) {
+        return eval_local_fn(context, fun, &arguments);
     }
 
     Value::Proc(Proc {
-        program: fn_name.to_string(),
-        args: args.iter().map(|a| a.to_string()).collect(),
+        program: signature.fn_name,
+        args: arguments.iter().map(|a| a.to_string()).collect(),
         stdout: None,
     })
 }
