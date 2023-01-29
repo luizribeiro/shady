@@ -7,84 +7,110 @@ use lazy_static::lazy_static;
 use proc_macro::*;
 use quote::quote;
 use std::sync::Mutex;
-use syn::{parse_macro_input, AttributeArgs, ItemFn};
+use syn::{parse_macro_input, AttributeArgs, ItemFn, NestedMeta};
 
 lazy_static! {
     static ref ALL_BUILTINS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 }
 
-#[proc_macro_attribute]
-pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
-    let builtin_fun = parse_macro_input!(input as ItemFn);
-    let sig = &builtin_fun.sig;
-    let builtin_fn_ident = &sig.ident;
-    let mut fn_name = builtin_fn_ident.to_string();
+struct Builtin {
+    fn_name: String,
+    is_infix: bool,
     // TODO: implement support for varargs
-    let mut _is_varargs = false;
-    let mut is_infix = false;
+    #[allow(dead_code)]
+    is_vargs: bool,
+}
 
-    let args = parse_macro_input!(args as AttributeArgs);
-    for arg in args {
-        match arg {
-            syn::NestedMeta::Meta(m) => match m {
-                syn::Meta::NameValue(nv) => {
-                    let name = nv.path.get_ident().unwrap().to_string();
-                    let value = match nv.lit {
-                        syn::Lit::Bool(b) => b.value(),
-                        _ => panic!("Unsupported literal type"),
-                    };
-                    match name.as_str() {
-                        "vargs" => _is_varargs = value,
-                        "infix" => is_infix = value,
-                        _ => panic!("Unsupported attribute"),
+impl Builtin {
+    fn new(orig_fun: &ItemFn, macro_args: &Vec<NestedMeta>) -> Self {
+        let mut fn_name = orig_fun.sig.ident.to_string();
+        let mut is_infix = false;
+        let mut is_vargs = false;
+
+        for arg in macro_args {
+            match arg {
+                syn::NestedMeta::Meta(m) => match m {
+                    syn::Meta::NameValue(nv) => {
+                        let name = nv.path.get_ident().unwrap().to_string();
+                        let value = match &nv.lit {
+                            syn::Lit::Bool(b) => b.value(),
+                            _ => panic!("Unsupported literal type"),
+                        };
+                        match name.as_str() {
+                            "vargs" => is_vargs = value,
+                            "infix" => is_infix = value,
+                            _ => panic!("Unsupported attribute"),
+                        }
                     }
-                }
-                _ => {}
-            },
-            syn::NestedMeta::Lit(l) => match l {
-                syn::Lit::Str(s) => fn_name = s.value(),
-                _ => {}
-            },
+                    _ => {}
+                },
+                syn::NestedMeta::Lit(l) => match l {
+                    syn::Lit::Str(s) => fn_name = s.value(),
+                    _ => {}
+                },
+            }
+        }
+
+        Builtin {
+            fn_name,
+            is_infix,
+            is_vargs,
         }
     }
+}
 
-    let setup_fname = format!("setup_{}_builtin", builtin_fn_ident);
-    let setup_ident = syn::Ident::new(&setup_fname, builtin_fn_ident.span());
+#[proc_macro_attribute]
+pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
+    let orig_fun = parse_macro_input!(input as ItemFn);
+    let macro_args = parse_macro_input!(args as AttributeArgs);
+
+    let orig_fun_ident = &orig_fun.sig.ident;
+
     let mut params_prog = quote! {};
     let mut args_prog = quote! {};
     let mut call_prog = quote! {};
-    for (i, param) in sig.inputs.clone().into_iter().enumerate() {
+    for (i, param) in orig_fun.sig.inputs.clone().into_iter().enumerate() {
         match param {
             syn::FnArg::Typed(typed) => {
                 let ident = match typed.pat.as_ref() {
-                    syn::Pat::Ident(builtin_fn_ident) => builtin_fn_ident.ident.clone(),
+                    syn::Pat::Ident(orig_fun_ident) => orig_fun_ident.ident.clone(),
                     _ => panic!("Invalid parameter"),
                 };
                 let param_name = ident.to_string();
                 let ty = &typed.ty;
+
                 params_prog.extend(quote! {
                     crate::ast::Parameter {
                         name: #param_name.to_string(),
                         typ: crate::types::value_type::<#ty>(),
                     },
                 });
+
                 args_prog.extend(quote! {
                     let #ident = crate::types::from_value::<#ty>(args[#i].clone());
                 });
+
                 call_prog.extend(quote! { #ident, });
             }
             _ => panic!("Invalid parameter"),
         }
     }
+
+    let setup_fname = format!("setup_{}_builtin", orig_fun_ident);
     ALL_BUILTINS
         .lock()
         .expect("could not obtain lock")
-        .push(setup_fname);
+        .push(setup_fname.clone());
+
+    let builtin = Builtin::new(&orig_fun, &macro_args);
+    let (fn_name, is_infix) = (builtin.fn_name, builtin.is_infix);
+    let setup_ident = syn::Ident::new(&setup_fname, orig_fun_ident.span());
+
     quote! {
-        #builtin_fun
+        #orig_fun
 
         pub fn #setup_ident(builtins: &mut crate::eval::BuiltinIndex) {
-            let fun = #builtin_fn_ident;
+            let fun = #orig_fun_ident;
             let signature = crate::ast::FnSignature {
                 fn_name: #fn_name.to_string(),
                 parameters: vec![
