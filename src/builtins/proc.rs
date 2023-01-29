@@ -68,3 +68,29 @@ fn proc_into_prod_reversed(a: Proc, b: Proc) -> Proc {
         ..b
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test_utils::call_main;
+
+    #[test]
+    fn test_proc() {
+        call_main("public main = exec (echo Hello World);", &[])
+            .assert()
+            .success()
+            .stdout("Hello World\n");
+    }
+
+    #[test]
+    fn test_stdout_redirection() {
+        call_main("public main = exec (echo Hello World > grep World);", &[])
+            .assert()
+            .success()
+            .stdout("Hello World\n");
+
+        call_main("public main = exec (echo Hello People > grep World);", &[])
+            .assert()
+            .success()
+            .stdout("");
+    }
+}
