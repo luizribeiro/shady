@@ -2,6 +2,7 @@ use crate::types::{Type, Value};
 use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
+use std::fmt::{Display, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
 
@@ -46,6 +47,34 @@ impl PartialEq for FnSignature {
         self.fn_name == other.fn_name
             && self.is_infix == other.is_infix
             && self.parameters == other.parameters
+    }
+}
+
+impl Display for FnSignature {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut result = String::new();
+        if self.is_public {
+            result.push_str("public ");
+        }
+        if self.is_infix {
+            result.push_str("infix ");
+        }
+        result.push_str(&self.fn_name);
+        result.push_str(" ");
+        for (i, param) in self.parameters.iter().enumerate() {
+            result.push_str("$");
+            result.push_str(if param.name.len() == 0 {
+                "_"
+            } else {
+                &param.name
+            });
+            result.push_str(": ");
+            result.push_str(&param.typ.to_string());
+            if i < self.parameters.len() - 1 {
+                result.push_str(", ");
+            }
+        }
+        write!(f, "{}", result)
     }
 }
 

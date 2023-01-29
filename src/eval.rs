@@ -136,8 +136,12 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
 
     if let Some(fns) = get_builtins_by_name(context, &signature.fn_name) {
         panic!(
-            "function {} not found, did you mean one of these: {:?}",
-            signature.fn_name, fns,
+            "function {} not found, did you mean one of these?\n{}",
+            signature,
+            fns.iter()
+                .map(|s| format!("  {}", s))
+                .collect::<Vec<String>>()
+                .join("\n"),
         );
     }
 

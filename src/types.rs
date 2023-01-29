@@ -42,6 +42,19 @@ impl PartialEq for Type {
     }
 }
 
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Int => write!(f, "int"),
+            Type::Str => write!(f, "str"),
+            Type::Bool => write!(f, "bool"),
+            Type::List(t) => write!(f, "[{}]", t),
+            Type::Proc => write!(f, "proc"),
+            Type::Any => write!(f, "any"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Proc {
     pub program: String,
