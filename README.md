@@ -32,3 +32,4 @@ a try and see what shady things you're
 * Better error rendering with miette
 * Proper return status code handling for external commands
 * Static typing analyzer
+* Allow for redirecting stdio from seq
