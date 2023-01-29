@@ -70,7 +70,7 @@ fn proc_into_prod_reversed(a: Proc, b: Proc) -> Proc {
 }
 
 #[cfg(test)]
-mod tests {
+mod integration_tests {
     use crate::test_utils::call_main;
 
     #[test]
