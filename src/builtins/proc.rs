@@ -60,3 +60,11 @@ fn proc_into_prod(a: Proc, b: Proc) -> Proc {
         ..a
     }
 }
+
+#[builtin("<")]
+fn proc_into_prod_reversed(a: Proc, b: Proc) -> Proc {
+    Proc {
+        stdout: Some(Box::new(a)),
+        ..b
+    }
+}
