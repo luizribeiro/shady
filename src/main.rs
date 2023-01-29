@@ -6,8 +6,6 @@ mod ast;
 mod builtins;
 mod cli;
 mod eval;
-#[cfg(test)]
-mod test_utils;
 mod types;
 
 use clap::Parser;

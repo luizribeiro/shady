@@ -37,10 +37,9 @@ expr = {
   (prefix_op* ~ primary
   ~ (infix_op ~ prefix_op* ~ primary)*)
   | if_expr
-  | fn_call
   | block
 }
-primary = _{ value | variable | list | "(" ~ expr ~ ")" }
+primary = _{ value | fn_call | variable | list | "(" ~ expr ~ ")" }
 variable = @{ "$" ~ token }
 value = _{ int | str | bool }
 
