@@ -93,4 +93,23 @@ mod integration_tests {
             .success()
             .stdout("");
     }
+
+    #[test]
+    fn test_arguments() {
+        call_main(
+            "public main $p: str = exec ((echo $p) > grep World);",
+            &["Hello World"],
+        )
+        .assert()
+        .success()
+        .stdout("Hello World\n");
+
+        call_main(
+            "public main $p: str = exec ((echo $p) > grep World);",
+            &["Hello People"],
+        )
+        .assert()
+        .success()
+        .stdout("");
+    }
 }

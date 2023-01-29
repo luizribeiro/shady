@@ -163,7 +163,7 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
 
     pratt
         .map_primary(|primary| match primary.as_rule() {
-            Rule::call => parse_call(primary),
+            Rule::fn_call => parse_call(primary),
             Rule::expr => parse_expr(primary),
             Rule::block => parse_block(primary),
             Rule::if_expr => parse_if(primary),
