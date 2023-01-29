@@ -44,6 +44,15 @@ fn exec(proc: Proc) -> i64 {
 }
 
 #[builtin]
+fn seq(procs: Vec<Proc>) -> i64 {
+    let mut last = 0;
+    for proc in procs {
+        last = spawn_and_wait(proc).status.code().unwrap_or(0) as i64;
+    }
+    last
+}
+
+#[builtin]
 fn stdout(proc: Proc) -> String {
     String::from_utf8(spawn_and_wait(proc).stdout).unwrap()
 }

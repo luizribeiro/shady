@@ -93,9 +93,6 @@ pub enum Expr {
         arguments: Vec<Expr>,
         is_infix: bool,
     },
-    Block {
-        statements: Vec<Expr>,
-    },
     If {
         condition: Box<Expr>,
         when_true: Box<Expr>,
@@ -113,17 +110,6 @@ fn parse_type(pair: Pair<Rule>) -> Type {
         Rule::type_bool => Type::Bool,
         _ => unreachable!(),
     }
-}
-
-fn parse_block(pair: Pair<Rule>) -> Expr {
-    let mut statements = Vec::new();
-    for pair in pair.into_inner() {
-        match pair.as_rule() {
-            Rule::expr => statements.push(parse_expr(pair)),
-            _ => unreachable!(),
-        }
-    }
-    Expr::Block { statements }
 }
 
 fn parse_if(pair: Pair<Rule>) -> Expr {
@@ -194,7 +180,6 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
         .map_primary(|primary| match primary.as_rule() {
             Rule::fn_call => parse_call(primary),
             Rule::expr => parse_expr(primary),
-            Rule::block => parse_block(primary),
             Rule::if_expr => parse_if(primary),
             x if is_value(x) => Expr::Value(parse_value(primary)),
             Rule::variable => Expr::Variable(primary.as_str()[1..].to_string()),
@@ -452,55 +437,46 @@ mod tests {
             arguments: vec![Expr::Variable("a".to_string())],
             is_infix: false,
         }),
-        parse_block: (
-            r#"main = { 1 * 2; echo "hi"; };"#,
-            Expr::Block {
-                statements: vec![
-                    Expr::Call {
-                        fn_name: "*".to_string(),
-                        arguments: vec![
-                            Expr::Value(Value::Int(1)),
-                            Expr::Value(Value::Int(2)),
-                        ],
-                        is_infix: true,
-                    },
-                    Expr::Call {
-                        fn_name: "echo".to_string(),
-                        arguments: vec![
-                            Expr::Value(Value::Str("hi".to_string())),
-                        ],
-                        is_infix: false,
-                    },
-                ],
-            }
-        ),
-        parse_if_with_block: (
+        parse_if_with_seq: (
             r#"
-                main = if ($isdog) {
+                main = if ($isdog) seq [
                     echo "dog";
-                } else {
+                ] else seq [
                     echo "cat";
-                };
+                ];
             "#,
             Expr::If {
                 condition: Box::new(Expr::Variable("isdog".to_string())),
-                when_true: Box::new(Expr::Block {
-                    statements: vec![Expr::Call {
-                        fn_name: "echo".to_string(),
-                        arguments: vec![Expr::Value(Value::Str("dog".to_string()))],
-                        is_infix: false,
+                when_true: Box::new(Expr::Call {
+                    fn_name: "seq".to_string(),
+                    is_infix: false,
+                    arguments: vec![Expr::List {
+                        elements: vec![
+                            Expr::Call {
+                                fn_name: "echo".to_string(),
+                                arguments: vec![Expr::Value(Value::Str("dog".to_string()))],
+                                is_infix: false,
+                            },
+                        ],
                     }],
                 }),
-                when_false: Box::new(Expr::Block {
-                    statements: vec![Expr::Call {
-                        fn_name: "echo".to_string(),
-                        arguments: vec![Expr::Value(Value::Str("cat".to_string()))],
+                when_false: Box::new(Expr::Call {
+                        fn_name: "seq".to_string(),
                         is_infix: false,
-                    }],
-                }),
+                        arguments: vec![Expr::List {
+                            elements: vec![
+                                Expr::Call {
+                                    fn_name: "echo".to_string(),
+                                    arguments: vec![Expr::Value(Value::Str("cat".to_string()))],
+                                    is_infix: false,
+                                },
+                            ],
+                        }],
+                    }
+                ),
             },
         ),
-        parse_if_without_block: (
+        parse_if_without_seq: (
             r#"
                 main = if ($isdog) echo "dog";
                     else echo "cat";
@@ -523,7 +499,7 @@ mod tests {
                 ),
             },
         ),
-        parse_if_without_block_and_without_semicolon: (
+        parse_if_without_seq_and_without_semicolon: (
             r#"
                 main = if ($isdog) echo "dog"
                     else echo "cat";

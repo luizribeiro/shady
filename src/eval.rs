@@ -67,13 +67,6 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
             }
         }
         Expr::Call { .. } => eval_fn(local_context, context, expr),
-        Expr::Block { statements } => {
-            let mut result = Value::Int(0);
-            for statement in statements {
-                result = eval_expr(local_context, context, statement);
-            }
-            result
-        }
         Expr::If {
             condition,
             when_true,

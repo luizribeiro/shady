@@ -42,3 +42,17 @@ fn test_arguments() {
     .success()
     .stdout("");
 }
+
+#[test]
+fn test_seq() {
+    call_main(
+        "public main = seq [
+            echo foo;
+            echo bar;
+        ];",
+        &[],
+    )
+    .assert()
+    .success()
+    .stdout("foo\nbar\n");
+}
