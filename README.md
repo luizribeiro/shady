@@ -21,12 +21,13 @@ a try and see what shady things you're
 
 ## TODOs
 
-* Allow for builtins and local functions to be called within seq
 * Lists as function parameters
 * Variadic functions
 * Optional function parameters
 * Default function parameter values
 * Return value type on functions
+* Allow for builtins and local functions to return proc and use streams
+* Require for public functions to return proc
 * Simplify calling into external commands
 * Lambdas / function pointer as parameters to other functions
 * List map / reduce functions
