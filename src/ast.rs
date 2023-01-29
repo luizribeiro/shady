@@ -391,13 +391,13 @@ mod tests {
 
     parse_expr_tests! {
         parse_int: ("main = 1;", Expr::Value(Value::Int(1))),
-        parse_list: ("main = [1, 2];", Expr::List {
+        parse_list: ("main = [1; 2];", Expr::List {
             elements: vec![
                 Expr::Value(Value::Int(1)),
                 Expr::Value(Value::Int(2)),
             ],
         }),
-        parse_of_expressions: ("main = [(1+2), (3*4)];", Expr::List {
+        parse_list_of_expressions: ("main = [(1+2); (3*4)];", Expr::List {
             elements: vec![
                 Expr::Call {
                     fn_name: "+".to_string(),

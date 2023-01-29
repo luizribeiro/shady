@@ -217,11 +217,11 @@ mod tests {
         eval_else: ("if (false) 42 else 666", Value::Int(666)),
         eval_else_if: ("if (false) 42 else if (false) 666 else 51", Value::Int(51)),
         eval_else_if_2: ("if (false) 42 else if (true) 666 else 51", Value::Int(666)),
-        eval_list: ("[1+2, 3+4]", Value::List {
+        eval_list: ("[1+2; 3+4]", Value::List {
             inner_type: Type::Int,
             values: vec![Value::Int(3), Value::Int(7)],
         }),
-        eval_first: ("first [5, 3, 2]", Value::Int(5)),
+        eval_first: ("first [5; 3; 2]", Value::Int(5)),
     }
 
     #[test]
