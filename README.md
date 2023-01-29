@@ -21,6 +21,7 @@ a try and see what shady things you're
 
 ## TODOs
 
+* Allow for builtins and local functions to be called within seq
 * Lists as function parameters
 * Variadic functions
 * Optional function parameters

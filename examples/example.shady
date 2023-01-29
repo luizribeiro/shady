@@ -11,25 +11,25 @@ public restart $service = sudo systemctl restart $service;
 
 public create-vm $hostname: str $id: int = proxmox-new $hostname $id;
 
-public create-foobar $foobar: str = {
+public create-foobar $foobar: str = seq [
   echo $foobar;
-};
+];
 
-public collect-garbage = {
+public collect-garbage = seq [
   nix-collect-garbage --delete-old;
   sudo docker system prune --all --force;
-};
+];
 
-public hello-world = {
+public hello-world = seq [
   print "hello world";
   print (2+2) * 5;
-};
+];
 
-public child-processes = {
+public child-processes = seq [
   echo "hello world";
   ls;
-};
+];
 
-public act $isdog: bool = {
+public act $isdog: bool = seq [
   echo "hello world";
-};
+];

@@ -13,26 +13,26 @@ public check = nix flake check --accept-flake-config;
 public rebuild =
   if ((os) == "linux") echo nixos-rebuild switch --flake ".#"
   else echo darwin-rebuild switch --flake ".#";
-public update = {
+public update = seq [
   nix flake update;
   uptix;
-};
-public undo = {
+];
+public undo = seq [
   git restore --staged .;
   git clean -fd;
   git checkout .;
-};
+];
 public create-vm $hostname: str $id: int = proxmox-new $hostname $id;
-public destroy-vm $id: int = {
+public destroy-vm $id: int = seq [
   qm shutdown $id;
   qm destroy $id;
-};
-public collect-garbage = {
+];
+public collect-garbage = seq [
   nix-collect-garbage -d;
   nix-store --optimise;
   sudo docker system prune --all --force;
-};
-public restart-galera-cluster = {
+];
+public restart-galera-cluster = seq [
   sudo systemctl stop mysql;
   sudo rm -f /var/lib/mysql/gvwstate.dat;
   sudo rm -f /var/lib/mysql/grastate.dat;
@@ -45,17 +45,17 @@ public restart-galera-cluster = {
   sudo galera_new_cluster;
   ssh carbon sudo systemctl start mysql;
   ssh nitrogen sudo systemctl start mysql;
-};
+];
 public ci = gh run list -L 5;
 public status = sudo monit summary -B;
 
-public act $isdog: bool = {
-  if ($isdog) {
+public act $isdog: bool = seq [
+  if ($isdog) seq [
     print "woof";
-  } else {
+  ] else seq [
     print "meow";
-  };
-};
+  ];
+];
 
 fib_impl $x: int = if ($x < 2) $x
   else (fib_impl ($x - 1)) + (fib_impl ($x - 2));
