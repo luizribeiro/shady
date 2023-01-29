@@ -60,10 +60,10 @@ impl Display for FnSignature {
             result.push_str("infix ");
         }
         result.push_str(&self.fn_name);
-        result.push_str(" ");
+        result.push(' ');
         for (i, param) in self.parameters.iter().enumerate() {
-            result.push_str("$");
-            result.push_str(if param.name.len() == 0 {
+            result.push('$');
+            result.push_str(if param.name.is_empty() {
                 "_"
             } else {
                 &param.name
