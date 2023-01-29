@@ -21,7 +21,6 @@ a try and see what shady things you're
 
 ## TODOs
 
-* Lists as function parameters
 * Variadic functions
 * Optional function parameters
 * Default function parameter values

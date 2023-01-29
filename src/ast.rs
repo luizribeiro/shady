@@ -108,6 +108,7 @@ fn parse_type(pair: Pair<Rule>) -> Type {
         Rule::type_int => Type::Int,
         Rule::type_str => Type::Str,
         Rule::type_bool => Type::Bool,
+        Rule::type_list => Type::List(Box::new(parse_type(pair.into_inner().next().unwrap()))),
         _ => unreachable!(),
     }
 }
@@ -354,6 +355,24 @@ mod tests {
                     Parameter {
                         name: "b".to_string(),
                         typ: Type::Int,
+                    },
+                ],
+            },
+        );
+        assert_eq!(
+            parse_script("add $a: [int] $b: [[int]] = 42;").fn_definitions[0].signature,
+            FnSignature {
+                is_public: false,
+                is_infix: false,
+                fn_name: "add".to_string(),
+                parameters: vec![
+                    Parameter {
+                        name: "a".to_string(),
+                        typ: Type::List(Box::new(Type::Int)),
+                    },
+                    Parameter {
+                        name: "b".to_string(),
+                        typ: Type::List(Box::new(Type::List(Box::new(Type::Int)))),
                     },
                 ],
             },

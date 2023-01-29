@@ -230,4 +230,20 @@ mod tests {
             Value::Int(55),
         );
     }
+
+    #[test]
+    fn eval_list_add() {
+        assert_eq!(
+            eval_script(
+                r"#
+                    public main = add_lists [1; 2] [3; 4];
+                    add_lists $x: [int] $y: [int] = $x + $y;
+                #"
+            ),
+            Value::List {
+                inner_type: Type::Int,
+                values: vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4)],
+            },
+        );
+    }
 }
