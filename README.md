@@ -18,3 +18,17 @@ Shady is a prototype scripting shell, better described by ChatGPT:
 > If you want to stand out from the crowd of vanilla shell scripters, give Shady
 a try and see what shady things you're
 > truly capable of.
+
+## TODOs
+
+* Lists as function parameters
+* Variadic functions
+* Optional function parameters
+* Default function parameter values
+* Return value type on functions
+* Simplify calling into external commands
+* Lambdas / function pointer as parameters to other functions
+* List map / reduce functions
+* Better error rendering with miette
+* Proper return status code handling for external commands
+* Static typing analyzer
