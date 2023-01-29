@@ -25,7 +25,14 @@ struct ShadyArgs {
 fn main() {
     let args = ShadyArgs::parse();
 
-    let program = ast::parse_file(&args.filename);
+    let program = if args.filename == "-" {
+        use std::io::Read;
+        let mut buffer = String::new();
+        std::io::stdin().read_to_string(&mut buffer).unwrap();
+        ast::parse_script(&buffer)
+    } else {
+        ast::parse_file(&args.filename)
+    };
     if args.ast {
         println!("{program:#?}");
         return;
