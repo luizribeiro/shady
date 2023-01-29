@@ -1,11 +1,11 @@
 use shady_macros::builtin;
 
-#[builtin("==")]
+#[builtin("==", infix = true)]
 fn str_eq_str(a: String, b: String) -> bool {
     a == b
 }
 
-#[builtin("!=")]
+#[builtin("!=", infix = true)]
 fn str_neq_str(a: String, b: String) -> bool {
     a != b
 }

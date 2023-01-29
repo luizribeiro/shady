@@ -53,7 +53,7 @@ fn lines_proc(proc: Proc) -> Vec<String> {
     stdout(proc).lines().map(|s| s.to_string()).collect()
 }
 
-#[builtin(">")]
+#[builtin(">", infix = true)]
 fn proc_into_prod(a: Proc, b: Proc) -> Proc {
     Proc {
         stdout: Some(Box::new(b)),
@@ -61,7 +61,7 @@ fn proc_into_prod(a: Proc, b: Proc) -> Proc {
     }
 }
 
-#[builtin("<")]
+#[builtin("<", infix = true)]
 fn proc_into_prod_reversed(a: Proc, b: Proc) -> Proc {
     Proc {
         stdout: Some(Box::new(a)),

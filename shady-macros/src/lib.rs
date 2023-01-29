@@ -21,6 +21,7 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut fn_name = builtin_fn_ident.to_string();
     // TODO: implement support for varargs
     let mut _is_varargs = false;
+    let mut is_infix = false;
 
     let args = parse_macro_input!(args as AttributeArgs);
     for arg in args {
@@ -34,6 +35,7 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
                     };
                     match name.as_str() {
                         "vargs" => _is_varargs = value,
+                        "infix" => is_infix = value,
                         _ => panic!("Unsupported attribute"),
                     }
                 }
@@ -89,7 +91,7 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
                     #params_prog
                 ],
                 is_public: true,
-                is_infix: false,
+                is_infix: #is_infix,
             };
             builtins.insert(
                 signature,

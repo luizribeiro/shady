@@ -10,6 +10,7 @@ fn get_builtin_fn<'a>(
     context: &'a ShadyContext,
     fn_name: &'a str,
     args: &[Value],
+    is_infix: bool,
 ) -> Option<&'a dyn Fn(Vec<Value>) -> Value> {
     let signature = FnSignature {
         fn_name: fn_name.to_string(),
@@ -21,7 +22,7 @@ fn get_builtin_fn<'a>(
             })
             .collect(),
         is_public: true,
-        is_infix: false,
+        is_infix,
     };
     match context.builtins.get_key_value(&signature) {
         Some((_, f)) => Some(f.as_ref()),
@@ -79,12 +80,16 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
                 None => panic!("variable {var_name} not found"),
             }
         }
-        Expr::Call { fn_name, arguments } => {
+        Expr::Call {
+            fn_name,
+            arguments,
+            is_infix,
+        } => {
             let args: Vec<Value> = arguments
                 .iter()
                 .map(|arg| eval_expr(local_context, context, arg))
                 .collect();
-            eval_fn(context, fn_name, args)
+            eval_fn(context, fn_name, args, *is_infix)
         }
         Expr::Block { statements } => {
             let mut result = Value::Int(0);
@@ -119,8 +124,8 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
     }
 }
 
-fn eval_fn(context: &ShadyContext, fn_name: &str, args: Vec<Value>) -> Value {
-    if let Some(builtin_fn) = get_builtin_fn(context, fn_name, &args) {
+fn eval_fn(context: &ShadyContext, fn_name: &str, args: Vec<Value>, is_infix: bool) -> Value {
+    if let Some(builtin_fn) = get_builtin_fn(context, fn_name, &args, is_infix) {
         return builtin_fn(args);
     }
 

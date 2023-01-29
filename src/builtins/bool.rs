@@ -1,16 +1,16 @@
 use shady_macros::builtin;
 
-#[builtin("&&")]
+#[builtin("&&", infix = true)]
 fn bool_and_bool(a: bool, b: bool) -> bool {
     a && b
 }
 
-#[builtin("||")]
+#[builtin("||", infix = true)]
 fn bool_or_bool(a: bool, b: bool) -> bool {
     a || b
 }
 
-#[builtin("==")]
+#[builtin("==", infix = true)]
 fn bool_eq_bool(a: bool, b: bool) -> bool {
     a == b
 }

@@ -37,12 +37,15 @@ pub struct FnSignature {
 impl Hash for FnSignature {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.fn_name.hash(state);
+        self.is_infix.hash(state);
     }
 }
 
 impl PartialEq for FnSignature {
     fn eq(&self, other: &Self) -> bool {
-        self.fn_name == other.fn_name && self.parameters == other.parameters
+        self.fn_name == other.fn_name
+            && self.is_infix == other.is_infix
+            && self.parameters == other.parameters
     }
 }
 
@@ -59,6 +62,7 @@ pub enum Expr {
     Call {
         fn_name: String,
         arguments: Vec<Expr>,
+        is_infix: bool,
     },
     Block {
         statements: Vec<Expr>,
@@ -124,6 +128,7 @@ fn parse_call(pair: Pair<Rule>) -> Expr {
     Expr::Call {
         fn_name: fn_name.expect("Rule::fn_name not found"),
         arguments,
+        is_infix: false,
     }
 }
 
@@ -179,10 +184,12 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
         .map_prefix(|op, rhs| Expr::Call {
             fn_name: op.as_str().to_string(),
             arguments: vec![rhs],
+            is_infix: false,
         })
         .map_infix(|lhs, op, rhs| Expr::Call {
             fn_name: op.as_str().to_string(),
             arguments: vec![lhs, rhs],
+            is_infix: true,
         })
         .parse(pair.into_inner())
 }
@@ -369,6 +376,7 @@ mod tests {
                         Expr::Value(Value::Int(1)),
                         Expr::Value(Value::Int(2)),
                     ],
+                    is_infix: true,
                 },
                 Expr::Call {
                     fn_name: "*".to_string(),
@@ -376,38 +384,44 @@ mod tests {
                         Expr::Value(Value::Int(3)),
                         Expr::Value(Value::Int(4)),
                     ],
+                    is_infix: true,
                 },
             ],
         }),
         parse_true: ("main = true;", Expr::Value(Value::Bool(true))),
         parse_false: ("main = false;", Expr::Value(Value::Bool(false))),
         parse_str: ("main = \"hello\";", Expr::Value(Value::Str("hello".to_string()))),
-        parse_add: ("main = 1 + 2;", Expr::Call { fn_name: "+".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
-        parse_sub: ("main = 1 - 2;", Expr::Call { fn_name: "-".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
-        parse_mul: ("main = 1 * 2;", Expr::Call { fn_name: "*".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
-        parse_div: ("main = 1 / 2;", Expr::Call { fn_name: "/".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
-        parse_pow: ("main = 1 ^ 2;", Expr::Call { fn_name: "^".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
-        parse_eq: ("main = 1 == 1;", Expr::Call { fn_name: "==".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(1))] }),
-        parse_neq: ("main = 1 != 2;", Expr::Call { fn_name: "!=".to_string(), arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
+        parse_add: ("main = 1 + 2;", Expr::Call { fn_name: "+".to_string(), is_infix: true, arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
+        parse_sub: ("main = 1 - 2;", Expr::Call { fn_name: "-".to_string(), is_infix: true, arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
+        parse_mul: ("main = 1 * 2;", Expr::Call { fn_name: "*".to_string(), is_infix: true, arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
+        parse_div: ("main = 1 / 2;", Expr::Call { fn_name: "/".to_string(), is_infix: true, arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
+        parse_pow: ("main = 1 ^ 2;", Expr::Call { fn_name: "^".to_string(), is_infix: true, arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
+        parse_eq: ("main = 1 == 1;", Expr::Call { fn_name: "==".to_string(), is_infix: true, arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(1))] }),
+        parse_neq: ("main = 1 != 2;", Expr::Call { fn_name: "!=".to_string(), is_infix: true, arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
         parse_call: ("main = add 1 2;", Expr::Call {
             fn_name: "add".to_string(),
             arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))],
+            is_infix: false,
         }),
         parse_call_with_unquoted_str_arg: ("main = add hello;", Expr::Call {
             fn_name: "add".to_string(),
             arguments: vec![Expr::Value(Value::Str("hello".to_string()))],
+            is_infix: false,
         }),
         parse_call_with_directory_as_arg: ("main = ls ./share/lib;", Expr::Call {
             fn_name: "ls".to_string(),
             arguments: vec![Expr::Value(Value::Str("./share/lib".to_string()))],
+            is_infix: false,
         }),
         parse_call_with_home_dir_as_arg: ("main = ls ~/.config/;", Expr::Call {
             fn_name: "ls".to_string(),
             arguments: vec![Expr::Value(Value::Str("~/.config/".to_string()))],
+            is_infix: false,
         }),
         parse_call_with_variable: ("main = add $a;", Expr::Call {
             fn_name: "add".to_string(),
             arguments: vec![Expr::Variable("a".to_string())],
+            is_infix: false,
         }),
         parse_block: (
             r#"main = { 1 * 2; echo "hi"; };"#,
@@ -419,12 +433,14 @@ mod tests {
                             Expr::Value(Value::Int(1)),
                             Expr::Value(Value::Int(2)),
                         ],
+                        is_infix: true,
                     },
                     Expr::Call {
                         fn_name: "echo".to_string(),
                         arguments: vec![
                             Expr::Value(Value::Str("hi".to_string())),
                         ],
+                        is_infix: false,
                     },
                 ],
             }
@@ -443,12 +459,14 @@ mod tests {
                     statements: vec![Expr::Call {
                         fn_name: "echo".to_string(),
                         arguments: vec![Expr::Value(Value::Str("dog".to_string()))],
+                        is_infix: false,
                     }],
                 }),
                 when_false: Box::new(Expr::Block {
                     statements: vec![Expr::Call {
                         fn_name: "echo".to_string(),
                         arguments: vec![Expr::Value(Value::Str("cat".to_string()))],
+                        is_infix: false,
                     }],
                 }),
             },
@@ -464,12 +482,14 @@ mod tests {
                     Expr::Call {
                         fn_name: "echo".to_string(),
                         arguments: vec![Expr::Value(Value::Str("dog".to_string()))],
+                        is_infix: false,
                     },
                 ),
                 when_false: Box::new(
                     Expr::Call {
                         fn_name: "echo".to_string(),
                         arguments: vec![Expr::Value(Value::Str("cat".to_string()))],
+                        is_infix: false,
                     },
                 ),
             },
@@ -485,12 +505,14 @@ mod tests {
                     Expr::Call {
                         fn_name: "echo".to_string(),
                         arguments: vec![Expr::Value(Value::Str("dog".to_string()))],
+                        is_infix: false,
                     },
                 ),
                 when_false: Box::new(
                     Expr::Call {
                         fn_name: "echo".to_string(),
                         arguments: vec![Expr::Value(Value::Str("cat".to_string()))],
+                        is_infix: false,
                     },
                 ),
             },

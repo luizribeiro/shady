@@ -1,7 +1,7 @@
 use crate::types::Value;
 use shady_macros::builtin;
 
-#[builtin("+")]
+#[builtin("+", infix = true)]
 fn list_add_list(a: Vec<Value>, b: Vec<Value>) -> Vec<Value> {
     let mut result = a;
     result.extend(b);
