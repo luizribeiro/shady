@@ -74,4 +74,4 @@ public lint = exec (proc nix-linter (all_nix_files));
 
 public a = echo (add_all [1, 2, 3]);
 
-public hehe = stdout ((ls -alht) > (grep "shady"));
+public hehe = ls -alht > grep "shady";
