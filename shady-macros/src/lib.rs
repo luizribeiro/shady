@@ -105,6 +105,10 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
     let builtin = Builtin::new(&orig_fun, &macro_args);
     let (fn_name, is_infix) = (builtin.fn_name, builtin.is_infix);
     let setup_ident = syn::Ident::new(&setup_fname, orig_fun_ident.span());
+    let return_type = match orig_fun.sig.output {
+        syn::ReturnType::Type(_, ref ty) => &**ty,
+        _ => panic!("Invalid return type"),
+    };
 
     quote! {
         #orig_fun
@@ -118,6 +122,7 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
                 ],
                 is_public: true,
                 is_infix: #is_infix,
+                return_type: crate::types::value_type::<#return_type>(),
             };
             builtins.insert(
                 signature,

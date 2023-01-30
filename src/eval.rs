@@ -108,6 +108,7 @@ fn build_signature(call: &Expr, types: Vec<Type>) -> FnSignature {
                 .collect(),
             is_public: true,
             is_infix: *is_infix,
+            return_type: Type::Any,
         },
         _ => panic!("not a call"),
     }

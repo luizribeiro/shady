@@ -25,6 +25,7 @@ fn_definition = {
     (!infix ~ fn_name ~ parameter*) |
     (infix ~ fn_name ~ parameter{2})
   )
+  ~ ("->" ~ typ)?
   ~ "=" ~ expr
 }
 

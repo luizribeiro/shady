@@ -33,6 +33,7 @@ pub struct FnSignature {
     pub is_infix: bool,
     pub fn_name: String,
     pub parameters: Vec<Parameter>,
+    pub return_type: Type,
 }
 
 impl Hash for FnSignature {
@@ -152,6 +153,13 @@ fn is_value(rule: Rule) -> bool {
     matches!(rule, Rule::int | Rule::str | Rule::bool)
 }
 
+fn is_type(rule: Rule) -> bool {
+    matches!(
+        rule,
+        Rule::type_int | Rule::type_str | Rule::type_bool | Rule::type_list
+    )
+}
+
 fn parse_value(pair: Pair<Rule>) -> Value {
     match pair.as_rule() {
         Rule::int => Value::Int(pair.as_str().parse().expect("int parse error")),
@@ -215,6 +223,7 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
     let mut fn_name: Option<String> = None;
     let mut parameters: Vec<Parameter> = vec![];
     let mut expr: Option<Expr> = None;
+    let mut return_type: Type = Type::Any;
 
     for pair in pair.into_inner() {
         match pair.as_rule() {
@@ -237,6 +246,7 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
                 };
                 parameters.push(parameter)
             }
+            x if is_type(x) => return_type = parse_type(pair),
             Rule::expr => expr = Some(parse_expr(pair)),
             _ => unreachable!(),
         };
@@ -248,6 +258,7 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
             is_infix,
             fn_name: fn_name.expect("Rule::fn_name not found while parsing function"),
             parameters,
+            return_type,
         },
         expr: expr.expect("Rule::expr not found while parsing function"),
     }
@@ -303,6 +314,7 @@ mod tests {
                     is_infix: false,
                     fn_name: "ans".to_string(),
                     parameters: vec![],
+                    return_type: Type::Any,
                 },
                 expr: Expr::Value(Value::Int(42)),
             },
@@ -312,12 +324,13 @@ mod tests {
     #[test]
     fn parse_function_signature() {
         assert_eq!(
-            parse_script("public ans = 42;").fn_definitions[0].signature,
+            parse_script("public ans -> int = 42;").fn_definitions[0].signature,
             FnSignature {
                 is_public: true,
                 is_infix: false,
                 fn_name: "ans".to_string(),
                 parameters: vec![],
+                return_type: Type::Int,
             },
         );
         assert_eq!(
@@ -327,6 +340,7 @@ mod tests {
                 is_infix: false,
                 fn_name: "ans".to_string(),
                 parameters: vec![],
+                return_type: Type::Any,
             },
         );
         assert_eq!(
@@ -338,7 +352,8 @@ mod tests {
                 parameters: vec![Parameter {
                     name: "msg".to_string(),
                     typ: Type::Str,
-                },],
+                }],
+                return_type: Type::Any,
             },
         );
         assert_eq!(
@@ -357,10 +372,12 @@ mod tests {
                         typ: Type::Int,
                     },
                 ],
+                return_type: Type::Any,
             },
         );
         assert_eq!(
-            parse_script("add $a: [int] $b: [[int]] = 42;").fn_definitions[0].signature,
+            parse_script("add $a: [int] $b: [[int]] -> [int] = [1; 2];").fn_definitions[0]
+                .signature,
             FnSignature {
                 is_public: false,
                 is_infix: false,
@@ -375,6 +392,7 @@ mod tests {
                         typ: Type::List(Box::new(Type::List(Box::new(Type::Int)))),
                     },
                 ],
+                return_type: Type::List(Box::new(Type::Int)),
             },
         );
     }
