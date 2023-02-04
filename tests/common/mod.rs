@@ -5,6 +5,8 @@ pub fn call_main(script: &str, args: &[&str]) -> Command {
     cmd.write_stdin(script);
     cmd.arg("-");
     cmd.arg("main");
-    cmd.args(args);
+    if !args.is_empty() {
+        cmd.args(args);
+    }
     cmd
 }

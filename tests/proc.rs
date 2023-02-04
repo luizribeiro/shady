@@ -44,6 +44,14 @@ fn test_arguments() {
 }
 
 #[test]
+fn test_default_arguments() {
+    call_main(r#"public main $p: str ("Hi There") = exec (echo $p);"#, &[])
+        .assert()
+        .success()
+        .stdout("Hi There\n");
+}
+
+#[test]
 fn test_seq() {
     call_main(
         "public main = seq [

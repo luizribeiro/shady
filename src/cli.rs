@@ -23,7 +23,6 @@ fn get_command(context: &ShadyContext) -> clap::Command {
         let mut subcmd = Command::new(string_to_static_str(signature.fn_name.clone()));
         for param in &signature.parameters {
             let mut arg = Arg::new(string_to_static_str(param.name.to_string()));
-            arg = arg.required(true);
             arg = match param.typ {
                 Type::Int => arg.value_parser(value_parser!(i64)),
                 Type::Str => arg.value_parser(value_parser!(String)),
@@ -34,6 +33,11 @@ fn get_command(context: &ShadyContext) -> clap::Command {
                 Type::Proc => unreachable!(),
                 Type::Any => unreachable!(),
             };
+            if let Some(default) = &param.default {
+                arg = arg.default_value(string_to_static_str(default.to_string()));
+            } else {
+                arg = arg.required(true);
+            }
             subcmd = subcmd.arg(arg);
         }
         cmd = cmd.subcommand(subcmd);
