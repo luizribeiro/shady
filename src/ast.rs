@@ -19,6 +19,7 @@ pub struct ProgramAST {
 pub struct Parameter {
     pub name: String,
     pub typ: Type,
+    pub default: Option<Value>,
 }
 
 impl PartialEq for Parameter {
@@ -233,14 +234,23 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
             Rule::parameter => {
                 let inner: Vec<Pair<Rule>> = pair.into_inner().collect();
                 let parameter = match &inner[..] {
+                    // TODO: error out when adding a required parameter after an optional one
+                    // TODO: error out when default value's type doesn't match parameter's type
+                    [var_name, typ, default] => Parameter {
+                        name: var_name.as_str()[1..].to_string(),
+                        typ: parse_type(typ.clone()),
+                        default: Some(parse_value(default.clone())),
+                    },
                     [var_name, typ] => Parameter {
                         name: var_name.as_str()[1..].to_string(),
                         typ: parse_type(typ.clone()),
+                        default: None,
                     },
                     [var_name] => Parameter {
                         name: var_name.as_str()[1..].to_string(),
                         // default to string
                         typ: Type::Str,
+                        default: None,
                     },
                     _ => unreachable!(),
                 };
@@ -352,6 +362,7 @@ mod tests {
                 parameters: vec![Parameter {
                     name: "msg".to_string(),
                     typ: Type::Str,
+                    default: None,
                 }],
                 return_type: Type::Any,
             },
@@ -366,10 +377,33 @@ mod tests {
                     Parameter {
                         name: "a".to_string(),
                         typ: Type::Int,
+                        default: None,
                     },
                     Parameter {
                         name: "b".to_string(),
                         typ: Type::Int,
+                        default: None,
+                    },
+                ],
+                return_type: Type::Any,
+            },
+        );
+        assert_eq!(
+            parse_script("add $a: int $b: int (42) = $a + $b;").fn_definitions[0].signature,
+            FnSignature {
+                is_public: false,
+                is_infix: false,
+                fn_name: "add".to_string(),
+                parameters: vec![
+                    Parameter {
+                        name: "a".to_string(),
+                        typ: Type::Int,
+                        default: None,
+                    },
+                    Parameter {
+                        name: "b".to_string(),
+                        typ: Type::Int,
+                        default: Some(Value::Int(42)),
                     },
                 ],
                 return_type: Type::Any,
@@ -386,10 +420,12 @@ mod tests {
                     Parameter {
                         name: "a".to_string(),
                         typ: Type::List(Box::new(Type::Int)),
+                        default: None,
                     },
                     Parameter {
                         name: "b".to_string(),
                         typ: Type::List(Box::new(Type::List(Box::new(Type::Int)))),
+                        default: None,
                     },
                 ],
                 return_type: Type::List(Box::new(Type::Int)),

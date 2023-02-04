@@ -104,6 +104,7 @@ fn build_signature(call: &Expr, types: Vec<Type>) -> FnSignature {
                 .map(|t| Parameter {
                     name: "".to_string(),
                     typ: t.clone(),
+                    default: None,
                 })
                 .collect(),
             is_public: true,
@@ -156,7 +157,14 @@ pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value])
         .parameters
         .iter()
         .enumerate()
-        .map(|(i, param)| (param.name.clone(), args[i].clone()))
+        .map(|(i, param)| {
+            (
+                param.name.clone(),
+                args.get(i)
+                    .cloned()
+                    .unwrap_or_else(|| param.default.clone().unwrap()),
+            )
+        })
         .collect();
     let local_context = LocalContext { vars };
     eval_expr(&local_context, context, &fun.expr)
@@ -229,6 +237,29 @@ mod tests {
                 #"
             ),
             Value::Int(55),
+        );
+    }
+
+    #[test]
+    fn eval_default_value() {
+        assert_eq!(
+            eval_script(
+                r"#
+                    public main = val 10;
+                    val $x: int (42) = $x;
+                #"
+            ),
+            Value::Int(10),
+        );
+
+        assert_eq!(
+            eval_script(
+                r"#
+                    public main = val;
+                    val $x: int (42) = $x;
+                #"
+            ),
+            Value::Int(42),
         );
     }
 

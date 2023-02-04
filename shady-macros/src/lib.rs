@@ -83,6 +83,7 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
                     crate::ast::Parameter {
                         name: #param_name.to_string(),
                         typ: crate::types::value_type::<#ty>(),
+                        default: None,
                     },
                 });
 

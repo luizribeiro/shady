@@ -23,7 +23,6 @@ a try and see what shady things you're
 
 * Variadic functions
 * Optional function parameters
-* Default function parameter values
 * Allow for builtins and local functions to return proc and use streams
 * Require for public functions to return proc
 * Simplify calling into external commands
