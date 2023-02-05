@@ -220,27 +220,24 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParamSpec {
-    pub is_optional: bool,
+    pub is_option: bool,
     pub short: Option<char>,
-    pub long: Option<String>,
     pub default_value: Option<Value>,
 }
 
 impl Default for ParamSpec {
     fn default() -> Self {
         ParamSpec {
-            is_optional: false,
+            is_option: false,
             short: None,
-            long: None,
             default_value: None,
         }
     }
 }
 
 fn parse_param_spec(pair: Pair<Rule>) -> ParamSpec {
-    let mut is_optional = false;
+    let mut is_option = false;
     let mut short = None;
-    let mut long = None;
     let default_value;
 
     let inner: Vec<Pair<Rule>> = pair.into_inner().collect();
@@ -251,9 +248,11 @@ fn parse_param_spec(pair: Pair<Rule>) -> ParamSpec {
                 let param_inner: Vec<Pair<Rule>> = param.clone().into_inner().collect();
                 match &param_inner[..] {
                     [token, value] => match token.as_str() {
-                        "short" => short = Some(value.as_str().chars().next().unwrap()),
-                        "long" => long = Some(value.as_str().to_string()),
-                        "optional" => is_optional = value.as_str().parse().unwrap(),
+                        "short" => short = Some(value.as_str().chars().nth(1).unwrap()),
+                        _ => unreachable!(),
+                    },
+                    [token] => match token.as_str() {
+                        "option" => is_option = true,
                         _ => unreachable!(),
                     },
                     _ => unreachable!(),
@@ -264,9 +263,8 @@ fn parse_param_spec(pair: Pair<Rule>) -> ParamSpec {
     }
 
     ParamSpec {
-        is_optional,
+        is_option,
         short,
-        long,
         default_value,
     }
 }
@@ -289,17 +287,11 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
                 let parameter = match &inner[..] {
                     // TODO: error out when adding a required parameter after an optional one
                     // TODO: error out when default value's type doesn't match parameter's type
-                    [var_name, typ, spec] => {
-                        let param_spec = parse_param_spec(spec.clone());
-                        Parameter {
-                            name: var_name.as_str()[1..].to_string(),
-                            typ: parse_type(typ.clone()),
-                            spec: ParamSpec {
-                                default_value: param_spec.default_value,
-                                ..ParamSpec::default()
-                            },
-                        }
-                    }
+                    [var_name, typ, spec] => Parameter {
+                        name: var_name.as_str()[1..].to_string(),
+                        typ: parse_type(typ.clone()),
+                        spec: parse_param_spec(spec.clone()),
+                    },
                     [var_name, typ] => Parameter {
                         name: var_name.as_str()[1..].to_string(),
                         typ: parse_type(typ.clone()),
@@ -468,6 +460,24 @@ mod tests {
                         },
                     },
                 ],
+                return_type: Type::Any,
+            },
+        );
+        assert_eq!(
+            parse_script("get $a: int (42, option) = $a;").fn_definitions[0].signature,
+            FnSignature {
+                is_public: false,
+                is_infix: false,
+                fn_name: "get".to_string(),
+                parameters: vec![Parameter {
+                    name: "a".to_string(),
+                    typ: Type::Int,
+                    spec: ParamSpec {
+                        default_value: Some(Value::Int(42)),
+                        is_option: true,
+                        ..ParamSpec::default()
+                    },
+                },],
                 return_type: Type::Any,
             },
         );

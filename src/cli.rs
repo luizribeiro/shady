@@ -38,6 +38,12 @@ fn get_command(context: &ShadyContext) -> clap::Command {
             } else {
                 arg = arg.required(true);
             }
+            if param.spec.is_option {
+                arg = arg.long(string_to_static_str(param.name.to_string()));
+                if let Some(short) = param.spec.short {
+                    arg = arg.short(short);
+                }
+            }
             subcmd = subcmd.arg(arg);
         }
         cmd = cmd.subcommand(subcmd);
