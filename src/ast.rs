@@ -218,21 +218,11 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
         .parse(pair.into_inner())
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Default, Debug, PartialEq, Eq)]
 pub struct ParamSpec {
     pub is_option: bool,
     pub short: Option<char>,
     pub default_value: Option<Value>,
-}
-
-impl Default for ParamSpec {
-    fn default() -> Self {
-        ParamSpec {
-            is_option: false,
-            short: None,
-            default_value: None,
-        }
-    }
 }
 
 fn parse_param_spec(pair: Pair<Rule>) -> ParamSpec {
