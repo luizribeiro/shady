@@ -10,6 +10,11 @@ fn str_neq_str(a: String, b: String) -> bool {
     a != b
 }
 
+#[builtin("+", infix = true)]
+fn str_add_str(a: String, b: String) -> String {
+    a + &b
+}
+
 #[builtin]
 fn lines(s: String) -> Vec<String> {
     s.lines().map(|s| s.to_string()).collect()
@@ -29,6 +34,14 @@ mod test {
     fn test_str_neq_str() {
         assert_eq!(str_neq_str("a".to_string(), "a".to_string()), false);
         assert_eq!(str_neq_str("a".to_string(), "b".to_string()), true);
+    }
+
+    #[test]
+    fn test_str_add_str() {
+        assert_eq!(
+            str_add_str("a".to_string(), "b".to_string()),
+            "ab".to_string()
+        );
     }
 
     #[test]
