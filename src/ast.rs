@@ -539,6 +539,12 @@ mod tests {
             "main = \"hello\\\"\";",
             Expr::Value(Value::Str("hello\"".to_string())),
         ),
+        parse_multiline_str_with_escape_characters: (
+            r#"main = "hello
+\"
+";"#,
+            Expr::Value(Value::Str("hello\n\"\n".to_string())),
+        ),
         parse_add: ("main = 1 + 2;", Expr::Call { fn_name: "+".to_string(), is_infix: true, arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
         parse_sub: ("main = 1 - 2;", Expr::Call { fn_name: "-".to_string(), is_infix: true, arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
         parse_mul: ("main = 1 * 2;", Expr::Call { fn_name: "*".to_string(), is_infix: true, arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
