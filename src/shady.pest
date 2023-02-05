@@ -12,12 +12,15 @@ token = @{ (ASCII_ALPHA | "_" | "-")+ }
 public = @{ "public" }
 infix = @{ "infix" }
 fn_name = @{ !reserved ~ token }
-parameter = { variable ~ (":" ~ typ)? ~ ("(" ~ value ~ ")")? }
+parameter = { variable ~ (":" ~ typ)? ~ ("(" ~ param_spec ~ ")")? }
 typ = _{ type_int | type_str | type_bool | type_list }
 type_int = @{ "int" }
 type_str = @{ "str" }
 type_bool = @{ "bool" }
 type_list = { "[" ~ typ ~ "]" }
+
+param_spec = { value ~ param_option* }
+param_option = { "," ~ token ~ ("=" ~ value)? }
 
 fn_definition = {
   public?

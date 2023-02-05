@@ -33,7 +33,7 @@ fn get_command(context: &ShadyContext) -> clap::Command {
                 Type::Proc => unreachable!(),
                 Type::Any => unreachable!(),
             };
-            if let Some(default) = &param.default {
+            if let Some(default) = &param.spec.default_value {
                 arg = arg.default_value(string_to_static_str(default.to_string()));
             } else {
                 arg = arg.required(true);

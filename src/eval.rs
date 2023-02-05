@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::ast::{get_fn_by_name, Expr, FnDefinition, FnSignature, Parameter, ProgramAST};
+use crate::ast::{
+    get_fn_by_name, Expr, FnDefinition, FnSignature, ParamSpec, Parameter, ProgramAST,
+};
 use crate::builtins;
 use crate::types::{Proc, Type, Value};
 
@@ -104,7 +106,7 @@ fn build_signature(call: &Expr, types: Vec<Type>) -> FnSignature {
                 .map(|t| Parameter {
                     name: "".to_string(),
                     typ: t.clone(),
-                    default: None,
+                    spec: ParamSpec::default(),
                 })
                 .collect(),
             is_public: true,
@@ -162,7 +164,7 @@ pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value])
                 param.name.clone(),
                 args.get(i)
                     .cloned()
-                    .unwrap_or_else(|| param.default.clone().unwrap()),
+                    .unwrap_or_else(|| param.spec.default_value.clone().unwrap()),
             )
         })
         .collect();

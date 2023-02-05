@@ -19,7 +19,7 @@ pub struct ProgramAST {
 pub struct Parameter {
     pub name: String,
     pub typ: Type,
-    pub default: Option<Value>,
+    pub spec: ParamSpec,
 }
 
 impl PartialEq for Parameter {
@@ -218,6 +218,59 @@ fn parse_expr(pair: Pair<Rule>) -> Expr {
         .parse(pair.into_inner())
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParamSpec {
+    pub is_optional: bool,
+    pub short: Option<char>,
+    pub long: Option<String>,
+    pub default_value: Option<Value>,
+}
+
+impl Default for ParamSpec {
+    fn default() -> Self {
+        ParamSpec {
+            is_optional: false,
+            short: None,
+            long: None,
+            default_value: None,
+        }
+    }
+}
+
+fn parse_param_spec(pair: Pair<Rule>) -> ParamSpec {
+    let mut is_optional = false;
+    let mut short = None;
+    let mut long = None;
+    let default_value;
+
+    let inner: Vec<Pair<Rule>> = pair.into_inner().collect();
+    match &inner[..] {
+        [raw_default_value, params @ ..] => {
+            default_value = Some(parse_value(raw_default_value.clone()));
+            for param in params {
+                let param_inner: Vec<Pair<Rule>> = param.clone().into_inner().collect();
+                match &param_inner[..] {
+                    [token, value] => match token.as_str() {
+                        "short" => short = Some(value.as_str().chars().next().unwrap()),
+                        "long" => long = Some(value.as_str().to_string()),
+                        "optional" => is_optional = value.as_str().parse().unwrap(),
+                        _ => unreachable!(),
+                    },
+                    _ => unreachable!(),
+                }
+            }
+        }
+        _ => unreachable!(),
+    }
+
+    ParamSpec {
+        is_optional,
+        short,
+        long,
+        default_value,
+    }
+}
+
 fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
     let mut is_public = false;
     let mut is_infix = false;
@@ -236,21 +289,27 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
                 let parameter = match &inner[..] {
                     // TODO: error out when adding a required parameter after an optional one
                     // TODO: error out when default value's type doesn't match parameter's type
-                    [var_name, typ, default] => Parameter {
-                        name: var_name.as_str()[1..].to_string(),
-                        typ: parse_type(typ.clone()),
-                        default: Some(parse_value(default.clone())),
-                    },
+                    [var_name, typ, spec] => {
+                        let param_spec = parse_param_spec(spec.clone());
+                        Parameter {
+                            name: var_name.as_str()[1..].to_string(),
+                            typ: parse_type(typ.clone()),
+                            spec: ParamSpec {
+                                default_value: param_spec.default_value,
+                                ..ParamSpec::default()
+                            },
+                        }
+                    }
                     [var_name, typ] => Parameter {
                         name: var_name.as_str()[1..].to_string(),
                         typ: parse_type(typ.clone()),
-                        default: None,
+                        spec: ParamSpec::default(),
                     },
                     [var_name] => Parameter {
                         name: var_name.as_str()[1..].to_string(),
                         // default to string
                         typ: Type::Str,
-                        default: None,
+                        spec: ParamSpec::default(),
                     },
                     _ => unreachable!(),
                 };
@@ -362,7 +421,7 @@ mod tests {
                 parameters: vec![Parameter {
                     name: "msg".to_string(),
                     typ: Type::Str,
-                    default: None,
+                    spec: ParamSpec::default(),
                 }],
                 return_type: Type::Any,
             },
@@ -377,12 +436,12 @@ mod tests {
                     Parameter {
                         name: "a".to_string(),
                         typ: Type::Int,
-                        default: None,
+                        spec: ParamSpec::default(),
                     },
                     Parameter {
                         name: "b".to_string(),
                         typ: Type::Int,
-                        default: None,
+                        spec: ParamSpec::default(),
                     },
                 ],
                 return_type: Type::Any,
@@ -398,12 +457,15 @@ mod tests {
                     Parameter {
                         name: "a".to_string(),
                         typ: Type::Int,
-                        default: None,
+                        spec: ParamSpec::default(),
                     },
                     Parameter {
                         name: "b".to_string(),
                         typ: Type::Int,
-                        default: Some(Value::Int(42)),
+                        spec: ParamSpec {
+                            default_value: Some(Value::Int(42)),
+                            ..ParamSpec::default()
+                        },
                     },
                 ],
                 return_type: Type::Any,
@@ -420,12 +482,12 @@ mod tests {
                     Parameter {
                         name: "a".to_string(),
                         typ: Type::List(Box::new(Type::Int)),
-                        default: None,
+                        spec: ParamSpec::default(),
                     },
                     Parameter {
                         name: "b".to_string(),
                         typ: Type::List(Box::new(Type::List(Box::new(Type::Int)))),
-                        default: None,
+                        spec: ParamSpec::default(),
                     },
                 ],
                 return_type: Type::List(Box::new(Type::Int)),
