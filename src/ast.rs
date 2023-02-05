@@ -164,12 +164,7 @@ fn is_type(rule: Rule) -> bool {
 fn parse_value(pair: Pair<Rule>) -> Value {
     match pair.as_rule() {
         Rule::int => Value::Int(pair.as_str().parse().expect("int parse error")),
-        Rule::str => {
-            let mut s = pair.as_str().to_string();
-            s.remove(0);
-            s.pop();
-            Value::Str(s)
-        }
+        Rule::str => Value::Str(snailquote::unescape(pair.as_str()).expect("str parse error")),
         Rule::bool => Value::Bool(pair.as_str().parse().expect("bool parse error")),
         _ => unreachable!("unknown rule type: {:?}", pair.as_rule()),
     }
@@ -540,6 +535,10 @@ mod tests {
         parse_true: ("main = true;", Expr::Value(Value::Bool(true))),
         parse_false: ("main = false;", Expr::Value(Value::Bool(false))),
         parse_str: ("main = \"hello\";", Expr::Value(Value::Str("hello".to_string()))),
+        parse_str_with_escape_characters: (
+            "main = \"hello\\\"\";",
+            Expr::Value(Value::Str("hello\"".to_string())),
+        ),
         parse_add: ("main = 1 + 2;", Expr::Call { fn_name: "+".to_string(), is_infix: true, arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
         parse_sub: ("main = 1 - 2;", Expr::Call { fn_name: "-".to_string(), is_infix: true, arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
         parse_mul: ("main = 1 * 2;", Expr::Call { fn_name: "*".to_string(), is_infix: true, arguments: vec![Expr::Value(Value::Int(1)), Expr::Value(Value::Int(2))] }),
