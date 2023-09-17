@@ -54,7 +54,15 @@ fn seq(procs: Vec<Proc>) -> i64 {
 
 #[builtin]
 fn stdout(proc: Proc) -> String {
-    String::from_utf8(spawn_and_wait(proc).stdout).unwrap()
+    String::from_utf8(
+        custom_spawn(&proc, |command| {
+            command.stdout(Stdio::piped());
+        })
+        .wait_with_output()
+        .expect("Failed to wait on child")
+        .stdout,
+    )
+    .unwrap()
 }
 
 #[builtin("lines")]

@@ -64,3 +64,25 @@ fn test_seq() {
     .success()
     .stdout("foo\nbar\n");
 }
+
+#[test]
+fn test_string_concat() {
+    call_main(
+        r#"public main = exec (echo ("a" + (stdout (echo -n "b")) + "c"));"#,
+        &[],
+    )
+    .assert()
+    .success()
+    .stdout("abc\n");
+}
+
+#[test]
+fn test_string_concat_simpler() {
+    call_main(
+        r#"public main = exec (echo ("a" + (stdout (echo -n "b"))));"#,
+        &[],
+    )
+    .assert()
+    .success()
+    .stdout("ab\n");
+}

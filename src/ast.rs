@@ -662,5 +662,42 @@ mod tests {
                 ),
             },
         ),
+        parse_string_concat_with_echo: (
+            r#"public main = exec (echo ("a" + (stdout (echo -n "b")) + "c"));"#,
+            Expr::Call {
+                fn_name: "exec".to_string(),
+                is_infix: false,
+                arguments: vec![Expr::Call {
+                    fn_name: "echo".to_string(),
+                    is_infix: false,
+                    arguments: vec![Expr::Call {
+                        fn_name: "+".to_string(),
+                        is_infix: true,
+                        arguments: vec![
+                            Expr::Call {
+                                fn_name: "+".to_string(),
+                                is_infix: true,
+                                arguments: vec![
+                                    Expr::Value(Value::Str("a".to_string())),
+                                    Expr::Call {
+                                        fn_name: "stdout".to_string(),
+                                        is_infix: false,
+                                        arguments: vec![Expr::Call {
+                                            fn_name: "echo".to_string(),
+                                            is_infix: false,
+                                            arguments: vec![
+                                                Expr::Value(Value::Str("-n".to_string())),
+                                                Expr::Value(Value::Str("b".to_string())),
+                                            ],
+                                        }],
+                                    },
+                                ],
+                            },
+                            Expr::Value(Value::Str("c".to_string())),
+                        ],
+                    }],
+                }],
+            },
+        ),
     }
 }
