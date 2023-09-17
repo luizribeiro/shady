@@ -86,3 +86,17 @@ fn test_string_concat_simpler() {
     .success()
     .stdout("ab\n");
 }
+
+#[test]
+fn test_stdout_redirection_anotherone() {
+    call_main(
+        r#"
+        this_host = stdout ((echo -n "sodium") > (sed "s/o/a/g"));
+        public main = exec (echo ("pre" + (this_host) + "post"));
+        "#,
+        &[],
+    )
+    .assert()
+    .success()
+    .stdout("presadiumpost\n");
+}

@@ -9,7 +9,7 @@ fn custom_spawn<F: FnMut(&mut Command)>(proc: &Proc, mut fun: F) -> Child {
     command.spawn().expect("Failed to execute process")
 }
 
-fn spawn(proc: Proc) -> Child {
+fn spawn(proc: Proc, collect_stdout: bool) -> Child {
     if let Some(ref stdout) = proc.stdout {
         let mut child = custom_spawn(&proc, |command| {
             command.stdout(Stdio::piped());
@@ -17,14 +17,21 @@ fn spawn(proc: Proc) -> Child {
 
         custom_spawn(stdout, |command| {
             command.stdin(child.stdout.take().unwrap());
+            if collect_stdout {
+                command.stdout(Stdio::piped());
+            }
         })
     } else {
-        custom_spawn(&proc, |_command| {})
+        custom_spawn(&proc, |command| {
+            if collect_stdout {
+                command.stdout(Stdio::piped());
+            }
+        })
     }
 }
 
-fn spawn_and_wait(proc: Proc) -> Output {
-    spawn(proc)
+fn spawn_and_wait(proc: Proc, collect_stdout: bool) -> Output {
+    spawn(proc, collect_stdout)
         .wait_with_output()
         .expect("Failed to wait on child")
 }
@@ -40,29 +47,21 @@ fn proc(program: String, args: Vec<String>) -> Value {
 
 #[builtin]
 fn exec(proc: Proc) -> i64 {
-    spawn_and_wait(proc).status.code().unwrap_or(0) as i64
+    spawn_and_wait(proc, false).status.code().unwrap_or(0) as i64
 }
 
 #[builtin]
 fn seq(procs: Vec<Proc>) -> i64 {
     let mut last = 0;
     for proc in procs {
-        last = spawn_and_wait(proc).status.code().unwrap_or(0) as i64;
+        last = spawn_and_wait(proc, false).status.code().unwrap_or(0) as i64;
     }
     last
 }
 
 #[builtin]
 fn stdout(proc: Proc) -> String {
-    String::from_utf8(
-        custom_spawn(&proc, |command| {
-            command.stdout(Stdio::piped());
-        })
-        .wait_with_output()
-        .expect("Failed to wait on child")
-        .stdout,
-    )
-    .unwrap()
+    String::from_utf8(spawn_and_wait(proc, true).stdout).unwrap()
 }
 
 #[builtin("lines")]
