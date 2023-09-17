@@ -149,7 +149,7 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
     Value::Proc(Proc {
         program: signature.fn_name,
         args: arguments.iter().map(|a| a.to_string()).collect(),
-        stdout: None,
+        stdin: None,
     })
 }
 

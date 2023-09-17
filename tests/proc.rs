@@ -88,10 +88,24 @@ fn test_string_concat_simpler() {
 }
 
 #[test]
-fn test_stdout_redirection_anotherone() {
+fn test_stdout_from_redirection() {
     call_main(
         r#"
         this_host = stdout ((echo -n "sodium") > (sed "s/o/a/g"));
+        public main = exec (echo ("pre" + (this_host) + "post"));
+        "#,
+        &[],
+    )
+    .assert()
+    .success()
+    .stdout("presadiumpost\n");
+}
+
+#[test]
+fn test_stdout_redirection_chaining() {
+    call_main(
+        r#"
+        this_host = stdout (echo "sodium") > (sed "s/o/a/g") > (awk "{printf $0}");
         public main = exec (echo ("pre" + (this_host) + "post"));
         "#,
         &[],
