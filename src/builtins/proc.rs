@@ -5,13 +5,18 @@ use std::{io, thread};
 
 #[builtin]
 fn exec(mut proc: Proc) -> i64 {
-    // TODO: add support for stdin
+    let stdin_thread = thread::spawn(move || {
+        io::copy(&mut io::stdin(), &mut proc.stdin_writer).unwrap();
+    });
     let stdout_thread = thread::spawn(move || {
         io::copy(&mut proc.stdout_reader, &mut io::stdout()).unwrap();
     });
     let stderr_thread = thread::spawn(move || {
         io::copy(&mut proc.stderr_reader, &mut io::stderr()).unwrap();
     });
+    if !atty::is(atty::Stream::Stdin) {
+        stdin_thread.join().unwrap();
+    }
     stdout_thread.join().unwrap();
     stderr_thread.join().unwrap();
     42 // FIXME: return the exit code
@@ -28,11 +33,16 @@ fn seq(procs: Vec<Proc>) -> i64 {
 
 #[builtin]
 fn stdout(mut proc: Proc) -> String {
-    // TODO: add support for stdin
+    let stdin_thread = thread::spawn(move || {
+        io::copy(&mut io::stdin(), &mut proc.stdin_writer).unwrap();
+    });
     let stderr_thread = thread::spawn(move || {
         io::copy(&mut proc.stderr_reader, &mut io::stderr()).unwrap();
     });
     let mut output = String::new();
+    if !atty::is(atty::Stream::Stdin) {
+        stdin_thread.join().unwrap();
+    }
     proc.stdout_reader.read_to_string(&mut output).unwrap();
     stderr_thread.join().unwrap();
     output
