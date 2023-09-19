@@ -146,11 +146,33 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
         return eval_local_fn(context, fun, &arguments);
     }
 
-    Value::Proc(Proc {
-        program: signature.fn_name,
-        args: arguments.iter().map(|a| a.to_string()).collect(),
-        stdin: None,
-    })
+    let program = signature.fn_name;
+    let args = arguments.iter().map(|a| a.to_string()).collect();
+    Value::Proc(spawn(program, args))
+}
+
+fn spawn(program: String, args: Vec<String>) -> Proc {
+    let mut command = std::process::Command::new(program.clone());
+    command.args(args.clone());
+
+    let (stdin_reader, stdin_writer) = os_pipe::pipe().unwrap();
+    command.stdin(stdin_reader);
+    let (stdout_reader, stdout_writer) = os_pipe::pipe().unwrap();
+    command.stdout(stdout_writer);
+    let (stderr_reader, stderr_writer) = os_pipe::pipe().unwrap();
+    command.stderr(stderr_writer);
+
+    std::thread::spawn(move || {
+        command.spawn().unwrap().wait().unwrap();
+    });
+
+    Proc {
+        program,
+        args,
+        stdin_writer,
+        stdout_reader,
+        stderr_reader,
+    }
 }
 
 pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value]) -> Value {

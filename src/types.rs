@@ -55,11 +55,33 @@ impl Display for Type {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct Proc {
     pub program: String,
     pub args: Vec<String>,
-    pub stdin: Option<Box<Proc>>,
+    pub stdin_writer: os_pipe::PipeWriter,
+    pub stdout_reader: os_pipe::PipeReader,
+    pub stderr_reader: os_pipe::PipeReader,
+}
+
+impl Eq for Proc {}
+
+impl Clone for Proc {
+    fn clone(&self) -> Self {
+        Proc {
+            program: self.program.clone(),
+            args: self.args.clone(),
+            stdin_writer: self.stdin_writer.try_clone().unwrap(),
+            stdout_reader: self.stdout_reader.try_clone().unwrap(),
+            stderr_reader: self.stderr_reader.try_clone().unwrap(),
+        }
+    }
+}
+
+impl PartialEq for Proc {
+    fn eq(&self, other: &Self) -> bool {
+        self.program == other.program && self.args == other.args
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
