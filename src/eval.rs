@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::ast::{
     get_fn_by_name, Expr, FnDefinition, FnSignature, ParamSpec, Parameter, ProgramAST,
@@ -162,9 +164,10 @@ fn spawn(program: String, args: Vec<String>) -> Proc {
     let (stderr_reader, stderr_writer) = os_pipe::pipe().unwrap();
     command.stderr(stderr_writer);
 
-    command.spawn().unwrap();
+    let child = command.spawn().unwrap();
 
     Proc {
+        child: Rc::new(RefCell::new(child)),
         program,
         args,
         stdin_writer,

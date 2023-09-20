@@ -13,7 +13,7 @@ fn exec(proc: Proc) -> i64 {
     }
     stdout_thread.join().unwrap();
     stderr_thread.join().unwrap();
-    42 // FIXME: return the exit code
+    proc.child.borrow_mut().wait().unwrap().code().unwrap() as i64
 }
 
 #[builtin]
@@ -50,6 +50,7 @@ fn pipe_stdout(a: Proc, b: Proc) -> Proc {
     redirect(a.stderr_reader, stderr_writer.try_clone().unwrap());
     redirect(b.stderr_reader, stderr_writer);
     Proc {
+        child: b.child,
         program: "".to_string(),
         args: vec![],
         stdin_writer: a.stdin_writer,

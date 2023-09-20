@@ -114,3 +114,26 @@ fn test_stdout_redirection_chaining() {
     .success()
     .stdout("presadiumpost\n");
 }
+
+#[test]
+fn test_exec_status_code() {
+    call_main(
+        r#"
+        public main = exec (echo (exec (echo "foobar" > grep "bar")));
+        "#,
+        &[],
+    )
+    .assert()
+    .stdout("foobar\n0\n")
+    .code(0);
+
+    call_main(
+        r#"
+        public main = exec (echo (exec (echo "foobar" > grep "baz")));
+        "#,
+        &[],
+    )
+    .assert()
+    .stdout("1\n")
+    .code(0);
+}

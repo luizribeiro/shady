@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
 #[derive(Debug, Clone, Eq)]
 pub enum Type {
@@ -57,6 +59,7 @@ impl Display for Type {
 
 #[derive(Debug)]
 pub struct Proc {
+    pub child: Rc<RefCell<std::process::Child>>,
     pub program: String,
     pub args: Vec<String>,
     pub stdin_writer: os_pipe::PipeWriter,
@@ -69,6 +72,7 @@ impl Eq for Proc {}
 impl Clone for Proc {
     fn clone(&self) -> Self {
         Proc {
+            child: self.child.clone(),
             program: self.program.clone(),
             args: self.args.clone(),
             stdin_writer: self.stdin_writer.try_clone().unwrap(),
