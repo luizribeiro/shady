@@ -162,9 +162,7 @@ fn spawn(program: String, args: Vec<String>) -> Proc {
     let (stderr_reader, stderr_writer) = os_pipe::pipe().unwrap();
     command.stderr(stderr_writer);
 
-    std::thread::spawn(move || {
-        command.spawn().unwrap().wait().unwrap();
-    });
+    command.spawn().unwrap();
 
     Proc {
         program,

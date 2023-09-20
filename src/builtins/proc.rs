@@ -53,6 +53,7 @@ fn lines_proc(proc: Proc) -> Vec<String> {
     stdout(proc).lines().map(|s| s.to_string()).collect()
 }
 
+#[builtin(">", infix = true)]
 fn pipe_stdout(mut a: Proc, mut b: Proc) -> Proc {
     thread::spawn(move || {
         io::copy(&mut a.stdout_reader, &mut b.stdin_writer).unwrap();
@@ -76,12 +77,7 @@ fn pipe_stdout(mut a: Proc, mut b: Proc) -> Proc {
     }
 }
 
-#[builtin(">", infix = true)]
-fn proc_into_prod(a: Proc, b: Proc) -> Proc {
-    pipe_stdout(a, b)
-}
-
 #[builtin("<", infix = true)]
-fn proc_into_prod_reversed(a: Proc, b: Proc) -> Proc {
-    proc_into_prod(b, a)
+fn pipe_stdout_reversed(a: Proc, b: Proc) -> Proc {
+    pipe_stdout(b, a)
 }
