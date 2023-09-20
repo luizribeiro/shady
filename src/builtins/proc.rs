@@ -4,16 +4,10 @@ use std::io::prelude::*;
 use std::{io, thread};
 
 #[builtin]
-fn exec(mut proc: Proc) -> i64 {
-    let stdin_thread = thread::spawn(move || {
-        io::copy(&mut io::stdin(), &mut proc.stdin_writer).unwrap();
-    });
-    let stdout_thread = thread::spawn(move || {
-        io::copy(&mut proc.stdout_reader, &mut io::stdout()).unwrap();
-    });
-    let stderr_thread = thread::spawn(move || {
-        io::copy(&mut proc.stderr_reader, &mut io::stderr()).unwrap();
-    });
+fn exec(proc: Proc) -> i64 {
+    let stdin_thread = redirect(io::stdin(), proc.stdin_writer);
+    let stdout_thread = redirect(proc.stdout_reader, io::stdout());
+    let stderr_thread = redirect(proc.stderr_reader, io::stderr());
     if !atty::is(atty::Stream::Stdin) {
         stdin_thread.join().unwrap();
     }
@@ -33,12 +27,8 @@ fn seq(procs: Vec<Proc>) -> i64 {
 
 #[builtin]
 fn stdout(mut proc: Proc) -> String {
-    let stdin_thread = thread::spawn(move || {
-        io::copy(&mut io::stdin(), &mut proc.stdin_writer).unwrap();
-    });
-    let stderr_thread = thread::spawn(move || {
-        io::copy(&mut proc.stderr_reader, &mut io::stderr()).unwrap();
-    });
+    let stdin_thread = redirect(io::stdin(), proc.stdin_writer);
+    let stderr_thread = redirect(proc.stderr_reader, io::stderr());
     let mut output = String::new();
     if !atty::is(atty::Stream::Stdin) {
         stdin_thread.join().unwrap();
@@ -54,20 +44,11 @@ fn lines_proc(proc: Proc) -> Vec<String> {
 }
 
 #[builtin(">", infix = true)]
-fn pipe_stdout(mut a: Proc, mut b: Proc) -> Proc {
-    thread::spawn(move || {
-        io::copy(&mut a.stdout_reader, &mut b.stdin_writer).unwrap();
-    });
-
-    let (stderr_reader, mut stderr_writer) = os_pipe::pipe().unwrap();
-    let mut stderr_writer_clone = stderr_writer.try_clone().unwrap();
-    thread::spawn(move || {
-        io::copy(&mut a.stderr_reader, &mut stderr_writer).unwrap();
-    });
-    thread::spawn(move || {
-        io::copy(&mut b.stderr_reader, &mut stderr_writer_clone).unwrap();
-    });
-
+fn pipe_stdout(a: Proc, b: Proc) -> Proc {
+    let (stderr_reader, stderr_writer) = os_pipe::pipe().unwrap();
+    redirect(a.stdout_reader, b.stdin_writer);
+    redirect(a.stderr_reader, stderr_writer.try_clone().unwrap());
+    redirect(b.stderr_reader, stderr_writer);
     Proc {
         program: "".to_string(),
         args: vec![],
@@ -80,4 +61,15 @@ fn pipe_stdout(mut a: Proc, mut b: Proc) -> Proc {
 #[builtin("<", infix = true)]
 fn pipe_stdout_reversed(a: Proc, b: Proc) -> Proc {
     pipe_stdout(b, a)
+}
+
+fn redirect<'a, R: Send + 'static, W: Send + 'static>(mut a: R, mut b: W) -> thread::JoinHandle<()>
+where
+    R: Read,
+    W: Write,
+{
+    // TODO: move to async I/O instead of threading
+    thread::spawn(move || {
+        io::copy(&mut a, &mut b).unwrap();
+    })
 }
