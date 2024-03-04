@@ -20,6 +20,11 @@ fn lines(s: String) -> Vec<String> {
     s.lines().map(|s| s.to_string()).collect()
 }
 
+#[builtin]
+fn to_string(i: i64) -> String {
+    i.to_string()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -50,5 +55,13 @@ mod test {
             lines("a\nb\nc".to_string()),
             vec!["a".to_string(), "b".to_string(), "c".to_string()]
         );
+    }
+
+    #[test]
+    fn test_to_string() {
+        assert_eq!(to_string(1), "1".to_string());
+        assert_eq!(to_string(0), "0".to_string());
+        assert_eq!(to_string(-1), "-1".to_string());
+        assert_eq!(to_string(42), "42".to_string());
     }
 }

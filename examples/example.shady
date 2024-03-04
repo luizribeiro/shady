@@ -4,7 +4,7 @@
  * this is a multiline comment
  */
 public main = 2 + 2 * 5;
-public foobar = print (3 * (main));
+public foobar = print (to_string (3 * (main)));
 
 # TODO: foobar
 public restart $service = sudo systemctl restart $service;
