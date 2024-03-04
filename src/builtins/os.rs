@@ -24,6 +24,6 @@ mod test {
 
     #[test]
     fn test_os() {
-        assert_eq!(os(), "linux");
+        assert!(os() == "linux" || os() == "macos");
     }
 }
