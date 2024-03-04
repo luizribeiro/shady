@@ -8,12 +8,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - uses: cachix/install-nix-action@v18
-      - uses: cachix/cachix-action@v12
+      - uses: cachix/install-nix-action@v22
+      - uses: cachix/cachix-action@v14
         with:
           name: devenv
       - name: Install devenv.sh
-        run: nix profile install github:cachix/devenv/v0.5
+        run: nix profile install github:cachix/devenv/v0.6.3
         shell: sh
       - name: Build
         run: devenv shell cargo build
