@@ -360,13 +360,13 @@ fn spawn(context: &ShadyContext, program: String, args: Vec<String>) -> Result<P
     let mut command = std::process::Command::new(program.clone());
     command.args(args.clone());
 
-    let (stdin_reader, stdin_writer) = os_pipe::pipe().map_err(|e| ShadyError::ProcessError(e))?;
+    let (stdin_reader, stdin_writer) = os_pipe::pipe().map_err(ShadyError::ProcessError)?;
     command.stdin(stdin_reader);
     let (stdout_reader, stdout_writer) =
-        os_pipe::pipe().map_err(|e| ShadyError::ProcessError(e))?;
+        os_pipe::pipe().map_err(ShadyError::ProcessError)?;
     command.stdout(stdout_writer);
     let (stderr_reader, stderr_writer) =
-        os_pipe::pipe().map_err(|e| ShadyError::ProcessError(e))?;
+        os_pipe::pipe().map_err(ShadyError::ProcessError)?;
     command.stderr(stderr_writer);
 
     let child = command.spawn()?;
