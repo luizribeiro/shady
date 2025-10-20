@@ -29,7 +29,10 @@ fn main() {
     let program = if args.filename == "-" {
         use std::io::Read;
         let mut buffer = String::new();
-        std::io::stdin().read_to_string(&mut buffer).unwrap();
+        if let Err(e) = std::io::stdin().read_to_string(&mut buffer) {
+            eprintln!("Error reading from stdin: {}", e);
+            std::process::exit(1);
+        }
         match ast::parse_script(&buffer) {
             Ok(p) => p,
             Err(e) => {

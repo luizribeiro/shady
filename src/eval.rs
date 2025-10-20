@@ -326,7 +326,10 @@ pub fn eval_local_fn(
                 param.name.clone(),
                 args.get(i)
                     .cloned()
-                    .unwrap_or_else(|| param.spec.default_value.clone().unwrap()),
+                    .unwrap_or_else(|| {
+                        param.spec.default_value.clone()
+                            .expect("BUG: missing argument but no default value - signature validation should prevent this")
+                    }),
             )
         })
         .collect();
