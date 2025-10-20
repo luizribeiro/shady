@@ -9,6 +9,9 @@ use crate::builtins;
 use crate::error::{Result, ShadyError};
 use crate::types::{Proc, Type, Value};
 
+// FnSignature contains interior mutability through Value -> Proc -> Rc<RefCell<Child>>,
+// but the Hash implementation only uses fn_name and is_infix, which are immutable.
+#[allow(clippy::mutable_key_type)]
 pub type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Result<Value>>>;
 
 /// Resource limits for execution safety
