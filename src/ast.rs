@@ -255,7 +255,7 @@ fn parse_param_spec(pair: Pair<Rule>) -> ParamSpec {
     }
 }
 
-fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
+fn parse_fn_definition(pair: Pair<Rule>) -> Result<FnDefinition> {
     let mut is_public = false;
     let mut is_infix = false;
     let mut fn_name: Option<String> = None;
@@ -271,8 +271,6 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
             Rule::parameter => {
                 let inner: Vec<Pair<Rule>> = pair.into_inner().collect();
                 let parameter = match &inner[..] {
-                    // TODO: error out when adding a required parameter after an optional one
-                    // TODO: error out when default value's type doesn't match parameter's type
                     [var_name, typ, spec] => Parameter {
                         name: var_name.as_str()[1..].to_string(),
                         typ: parse_type(typ.clone()),
@@ -299,7 +297,31 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
         };
     }
 
-    FnDefinition {
+    // Validate parameter ordering: required parameters cannot come after optional ones
+    let mut found_optional = false;
+    for param in &parameters {
+        if param.spec.default_value.is_some() {
+            found_optional = true;
+        } else if found_optional {
+            return Err(ShadyError::RequiredAfterOptional(param.name.clone()));
+        }
+    }
+
+    // Validate default value types match parameter types
+    for param in &parameters {
+        if let Some(default_value) = &param.spec.default_value {
+            let default_type = default_value.get_type();
+            if default_type != param.typ {
+                return Err(ShadyError::DefaultTypeMismatch {
+                    param: param.name.clone(),
+                    expected: param.typ.clone(),
+                    actual: default_type,
+                });
+            }
+        }
+    }
+
+    Ok(FnDefinition {
         signature: FnSignature {
             is_public,
             is_infix,
@@ -308,22 +330,22 @@ fn parse_fn_definition(pair: Pair<Rule>) -> FnDefinition {
             return_type,
         },
         expr: expr.expect("Rule::expr not found while parsing function"),
-    }
+    })
 }
 
-fn parse_program(pair: Pair<Rule>) -> ProgramAST {
+fn parse_program(pair: Pair<Rule>) -> Result<ProgramAST> {
     let mut fn_definitions: Vec<FnDefinition> = vec![];
     let pairs = pair.into_inner();
 
     for pair in pairs {
         match pair.as_rule() {
-            Rule::fn_definition => fn_definitions.push(parse_fn_definition(pair)),
+            Rule::fn_definition => fn_definitions.push(parse_fn_definition(pair)?),
             Rule::EOI => (),
             _ => unreachable!(),
         }
     }
 
-    ProgramAST { fn_definitions }
+    Ok(ProgramAST { fn_definitions })
 }
 
 pub fn parse_script(text: &str) -> Result<ProgramAST> {
@@ -338,7 +360,7 @@ pub fn parse_script(text: &str) -> Result<ProgramAST> {
         ));
     }
 
-    Ok(parse_program(pair))
+    parse_program(pair)
 }
 
 pub fn parse_file(filename: &str) -> Result<ProgramAST> {
@@ -708,5 +730,109 @@ mod tests {
                 }],
             },
         ),
+    }
+
+    // Parameter validation tests
+    #[test]
+    fn test_required_param_after_optional_fails() {
+        let result = parse_script("bad $a: int (42) $b: int = $a + $b;");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::RequiredAfterOptional(param_name) => {
+                assert_eq!(param_name, "b");
+            }
+            e => panic!("Expected RequiredAfterOptional error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_default_type_mismatch_fails() {
+        let result = parse_script("bad $a: int (\"hello\") = $a;");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::DefaultTypeMismatch {
+                param,
+                expected,
+                actual,
+            } => {
+                assert_eq!(param, "a");
+                assert_eq!(expected, Type::Int);
+                assert_eq!(actual, Type::Str);
+            }
+            e => panic!("Expected DefaultTypeMismatch error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_bool_default_on_int_param_fails() {
+        let result = parse_script("bad $a: int (true) = $a;");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::DefaultTypeMismatch {
+                param,
+                expected,
+                actual,
+            } => {
+                assert_eq!(param, "a");
+                assert_eq!(expected, Type::Int);
+                assert_eq!(actual, Type::Bool);
+            }
+            e => panic!("Expected DefaultTypeMismatch error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_valid_parameter_ordering_succeeds() {
+        // All required parameters first
+        let result = parse_script("good $a: int $b: int = $a + $b;");
+        assert!(result.is_ok());
+
+        // All optional parameters
+        let result = parse_script("good $a: int (1) $b: int (2) = $a + $b;");
+        assert!(result.is_ok());
+
+        // Required then optional
+        let result = parse_script("good $a: int $b: int (42) = $a + $b;");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_multiple_required_after_optional_fails() {
+        let result = parse_script("bad $a: int (1) $b: int $c: int = $a + $b + $c;");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::RequiredAfterOptional(param_name) => {
+                assert_eq!(param_name, "b");
+            }
+            e => panic!("Expected RequiredAfterOptional error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_correct_default_value_types_succeed() {
+        // Int default on int param
+        let result = parse_script("good $a: int (42) = $a;");
+        assert!(result.is_ok());
+
+        // String default on str param
+        let result = parse_script("good $a: str (\"hello\") = $a;");
+        assert!(result.is_ok());
+
+        // Bool default on bool param
+        let result = parse_script("good $a: bool (true) = $a;");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_complex_invalid_ordering() {
+        // Three params: required, optional, required - should fail on third param
+        let result = parse_script("bad $x: int $y: int (10) $z: str = $x + $y;");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::RequiredAfterOptional(param_name) => {
+                assert_eq!(param_name, "z");
+            }
+            e => panic!("Expected RequiredAfterOptional error, got {:?}", e),
+        }
     }
 }
