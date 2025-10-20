@@ -8,6 +8,12 @@ use crate::types::{from_string, Type};
 
 use clap::{command, value_parser, Arg, Command};
 
+// Note: Box::leak is used to convert Strings to 'static str for clap's API.
+// This is an acceptable tradeoff because:
+// 1. CLI parsing happens only once per program run
+// 2. The amount of leaked memory is small (function and parameter names)
+// 3. The program terminates shortly after, and the OS reclaims all memory
+// 4. Clap 4.1's builder API requires 'static lifetimes for some methods
 fn string_to_static_str(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
 }
@@ -23,7 +29,7 @@ fn get_command(context: &ShadyContext) -> clap::Command {
 
         let mut subcmd = Command::new(string_to_static_str(signature.fn_name.clone()));
         for param in &signature.parameters {
-            let mut arg = Arg::new(string_to_static_str(param.name.to_string()));
+            let mut arg = Arg::new(string_to_static_str(param.name.clone()));
             arg = match param.typ {
                 Type::Int => arg.value_parser(value_parser!(i64)),
                 Type::Str => arg.value_parser(value_parser!(String)),
@@ -40,7 +46,7 @@ fn get_command(context: &ShadyContext) -> clap::Command {
                 arg = arg.required(true);
             }
             if param.spec.is_option {
-                arg = arg.long(string_to_static_str(param.name.to_string()));
+                arg = arg.long(string_to_static_str(param.name.clone()));
                 if let Some(short) = param.spec.short {
                     arg = arg.short(short);
                 }
