@@ -1,6 +1,6 @@
+use crate::types::Type;
 use miette::{Diagnostic, SourceSpan};
 use thiserror::Error;
-use crate::types::Type;
 
 /// Main error type for Shady interpreter
 #[derive(Error, Debug, Diagnostic)]

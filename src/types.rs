@@ -1,9 +1,9 @@
+use crate::error::{Result, ShadyError};
+use miette::SourceSpan;
 use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
-use crate::error::{Result, ShadyError};
-use miette::SourceSpan;
 
 #[derive(Debug, Clone, Eq)]
 pub enum Type {
@@ -77,12 +77,15 @@ impl Clone for Proc {
             child: self.child.clone(),
             program: self.program.clone(),
             args: self.args.clone(),
-            stdin_writer: self.stdin_writer.try_clone()
-                .expect("Failed to clone stdin pipe - this is likely a system resource limit issue"),
-            stdout_reader: self.stdout_reader.try_clone()
-                .expect("Failed to clone stdout pipe - this is likely a system resource limit issue"),
-            stderr_reader: self.stderr_reader.try_clone()
-                .expect("Failed to clone stderr pipe - this is likely a system resource limit issue"),
+            stdin_writer: self.stdin_writer.try_clone().expect(
+                "Failed to clone stdin pipe - this is likely a system resource limit issue",
+            ),
+            stdout_reader: self.stdout_reader.try_clone().expect(
+                "Failed to clone stdout pipe - this is likely a system resource limit issue",
+            ),
+            stderr_reader: self.stderr_reader.try_clone().expect(
+                "Failed to clone stderr pipe - this is likely a system resource limit issue",
+            ),
         }
     }
 }
@@ -228,7 +231,8 @@ impl<T: PrimitiveValue> PrimitiveValue for Vec<T> {
                         span: SourceSpan::from(0..0),
                     });
                 }
-                values.into_iter()
+                values
+                    .into_iter()
                     .map(T::from_value)
                     .collect::<Result<Vec<T>>>()
             }
@@ -297,14 +301,13 @@ pub fn to_value<T: PrimitiveValue>(value: T) -> Value {
 
 pub fn from_string(typ: &Type, s: &str) -> Result<Value> {
     match typ {
-        Type::Int => {
-            s.parse::<i64>()
-                .map(Value::Int)
-                .map_err(|_| ShadyError::InvalidConversion {
-                    from: format!("string '{}'", s),
-                    to: "int".to_string(),
-                })
-        }
+        Type::Int => s
+            .parse::<i64>()
+            .map(Value::Int)
+            .map_err(|_| ShadyError::InvalidConversion {
+                from: format!("string '{}'", s),
+                to: "int".to_string(),
+            }),
         Type::Str => Ok(Value::Str(s.to_string())),
         Type::Bool => {
             s.parse::<bool>()

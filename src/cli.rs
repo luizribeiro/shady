@@ -65,14 +65,16 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
 
     let mut vars = HashMap::new();
     let subcmd_name = matches.subcommand_name().unwrap_or("main");
-    let fun = ast::get_fn_by_name(&context.program, subcmd_name)
-        .ok_or_else(|| crate::error::ShadyError::FunctionNotFound {
+    let fun = ast::get_fn_by_name(&context.program, subcmd_name).ok_or_else(|| {
+        crate::error::ShadyError::FunctionNotFound {
             name: subcmd_name.to_string(),
             span: SourceSpan::from(0..0),
-        })?;
+        }
+    })?;
     if let Some(args) = matches.subcommand_matches(subcmd_name) {
         for param in &fun.signature.parameters {
-            let raw_values = args.get_raw(&param.name)
+            let raw_values = args
+                .get_raw(&param.name)
                 .ok_or_else(|| crate::error::ShadyError::MissingCliArgument(param.name.clone()))?;
 
             for raw_cli_value in raw_values {
@@ -83,10 +85,7 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
         }
     }
 
-    let local_context = eval::LocalContext {
-        vars,
-        depth: 0,
-    };
+    let local_context = eval::LocalContext { vars, depth: 0 };
 
     eval::eval_expr_with_type(&local_context, context, &fun.expr, None)?;
     Ok(())

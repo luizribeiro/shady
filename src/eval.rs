@@ -58,7 +58,9 @@ fn get_builtins_by_name<'a>(
 fn signature_matches(definition: &FnSignature, call: &FnSignature) -> bool {
     // Check that we have the right number of arguments
     // (accounting for default values)
-    let required_params = definition.parameters.iter()
+    let required_params = definition
+        .parameters
+        .iter()
         .filter(|p| p.spec.default_value.is_none())
         .count();
     let total_params = definition.parameters.len();
@@ -146,13 +148,17 @@ pub fn eval_expr_with_type(
 ) -> Result<Value> {
     // Check recursion depth limit
     if local_context.depth > context.limits.max_recursion_depth {
-        return Err(ShadyError::RecursionLimitExceeded(context.limits.max_recursion_depth));
+        return Err(ShadyError::RecursionLimitExceeded(
+            context.limits.max_recursion_depth,
+        ));
     }
 
     match expr {
         Expr::Value(value, _) => Ok(value.clone()),
         Expr::Variable(var_name, span) => {
-            local_context.vars.get(var_name)
+            local_context
+                .vars
+                .get(var_name)
                 .cloned()
                 .ok_or_else(|| ShadyError::VariableNotFound {
                     name: var_name.clone(),
@@ -166,10 +172,15 @@ pub fn eval_expr_with_type(
             when_false,
             ..
         } => {
-            let cond_val = eval_expr_with_type(local_context, context, condition, Some(&Type::Bool))?;
+            let cond_val =
+                eval_expr_with_type(local_context, context, condition, Some(&Type::Bool))?;
             match cond_val {
-                Value::Bool(true) => eval_expr_with_type(local_context, context, when_true, expected_type),
-                Value::Bool(false) => eval_expr_with_type(local_context, context, when_false, expected_type),
+                Value::Bool(true) => {
+                    eval_expr_with_type(local_context, context, when_true, expected_type)
+                }
+                Value::Bool(false) => {
+                    eval_expr_with_type(local_context, context, when_false, expected_type)
+                }
                 _ => Err(ShadyError::TypeMismatch {
                     expected: "bool".to_string(),
                     actual: format!("{:?}", cond_val.get_type()),
@@ -215,7 +226,12 @@ pub fn eval_expr_with_type(
 
 fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Result<Value> {
     let (fn_name, arg_exprs, is_infix, call_span) = match expr {
-        Expr::Call { fn_name, arguments, is_infix, span } => (fn_name, arguments, *is_infix, span),
+        Expr::Call {
+            fn_name,
+            arguments,
+            is_infix,
+            span,
+        } => (fn_name, arguments, *is_infix, span),
         _ => return Err(ShadyError::EvalError("not a call".to_string())),
     };
 
@@ -223,15 +239,21 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
     let param_types: Option<Vec<Type>> = {
         // Check if it's a user-defined function
         if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
-            Some(fun.signature.parameters.iter().map(|p| p.typ.clone()).collect())
+            Some(
+                fun.signature
+                    .parameters
+                    .iter()
+                    .map(|p| p.typ.clone())
+                    .collect(),
+            )
         } else {
             // Check builtins by name to get possible signatures
             if let Some(builtin_sigs) = get_builtins_by_name(context, fn_name) {
                 // For now, just take the first signature's parameter types
                 // In the future, we could be smarter about overload resolution
-                builtin_sigs.first().map(|sig| {
-                    sig.parameters.iter().map(|p| p.typ.clone()).collect()
-                })
+                builtin_sigs
+                    .first()
+                    .map(|sig| sig.parameters.iter().map(|p| p.typ.clone()).collect())
             } else {
                 None
             }
@@ -277,7 +299,8 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
 
     if let Some(fns) = get_builtins_by_name(context, &signature.fn_name) {
         // Try to find which argument has the wrong type
-        let error_span = fns.iter()
+        let error_span = fns
+            .iter()
             .find_map(|f| find_mismatched_arg_index(f, &signature))
             .and_then(|i| arg_exprs.get(i))
             .map(|expr| expr.span().to_source_span())
@@ -323,7 +346,9 @@ fn spawn(context: &ShadyContext, program: String, args: Vec<String>) -> Result<P
     // Check process limit
     let mut count = context.process_count.borrow_mut();
     if *count >= context.limits.max_process_count {
-        return Err(ShadyError::ProcessLimitExceeded(context.limits.max_process_count));
+        return Err(ShadyError::ProcessLimitExceeded(
+            context.limits.max_process_count,
+        ));
     }
     *count += 1;
     drop(count); // Release the borrow
@@ -331,14 +356,13 @@ fn spawn(context: &ShadyContext, program: String, args: Vec<String>) -> Result<P
     let mut command = std::process::Command::new(program.clone());
     command.args(args.clone());
 
-    let (stdin_reader, stdin_writer) = os_pipe::pipe()
-        .map_err(|e| ShadyError::ProcessError(e))?;
+    let (stdin_reader, stdin_writer) = os_pipe::pipe().map_err(|e| ShadyError::ProcessError(e))?;
     command.stdin(stdin_reader);
-    let (stdout_reader, stdout_writer) = os_pipe::pipe()
-        .map_err(|e| ShadyError::ProcessError(e))?;
+    let (stdout_reader, stdout_writer) =
+        os_pipe::pipe().map_err(|e| ShadyError::ProcessError(e))?;
     command.stdout(stdout_writer);
-    let (stderr_reader, stderr_writer) = os_pipe::pipe()
-        .map_err(|e| ShadyError::ProcessError(e))?;
+    let (stderr_reader, stderr_writer) =
+        os_pipe::pipe().map_err(|e| ShadyError::ProcessError(e))?;
     command.stderr(stderr_writer);
 
     let child = command.spawn()?;
@@ -622,7 +646,7 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            ShadyError::EmptyListNeedsType { .. } => {},
+            ShadyError::EmptyListNeedsType { .. } => {}
             e => panic!("Expected EmptyListNeedsType error, got {:?}", e),
         }
     }
@@ -681,7 +705,9 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            ShadyError::TypeMismatch { expected, actual, .. } => {
+            ShadyError::TypeMismatch {
+                expected, actual, ..
+            } => {
                 assert_eq!(expected, "bool");
                 assert!(actual.contains("int") || actual.contains("Int"));
             }
@@ -706,8 +732,11 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            ShadyError::TypeMismatch { .. } => {}, // Expected
-            e => panic!("Expected TypeMismatch error for mixed list types, got {:?}", e),
+            ShadyError::TypeMismatch { .. } => {} // Expected
+            e => panic!(
+                "Expected TypeMismatch error for mixed list types, got {:?}",
+                e
+            ),
         }
     }
 
@@ -727,7 +756,9 @@ mod tests {
         assert!(result.is_err());
         // The + operator exists for (int, int) but we're passing (int, bool)
         match result.unwrap_err() {
-            ShadyError::FunctionSignatureMismatch { name, arg_types, .. } => {
+            ShadyError::FunctionSignatureMismatch {
+                name, arg_types, ..
+            } => {
                 assert_eq!(name, "+");
                 assert!(arg_types.contains("did you mean one of these?"));
             }
@@ -764,7 +795,9 @@ mod tests {
         // The function expects (int, int) but we're calling with (int, bool)
         // This should now be caught at call time, not during body evaluation
         match result.unwrap_err() {
-            ShadyError::FunctionSignatureMismatch { name, arg_types, .. } => {
+            ShadyError::FunctionSignatureMismatch {
+                name, arg_types, ..
+            } => {
                 assert_eq!(name, "custom_add");
                 assert!(arg_types.contains("expected signature"));
             }
@@ -793,7 +826,10 @@ mod tests {
             ShadyError::FunctionSignatureMismatch { name, .. } => {
                 assert_eq!(name, "takes_two");
             }
-            e => panic!("Expected FunctionSignatureMismatch error for wrong arg count, got {:?}", e),
+            e => panic!(
+                "Expected FunctionSignatureMismatch error for wrong arg count, got {:?}",
+                e
+            ),
         }
     }
 
@@ -826,7 +862,12 @@ mod tests {
             max_recursion_depth: 10,
             max_process_count: 100,
         };
-        let context = build_context_with_limits("test.shady".to_string(), script.to_string(), program, limits);
+        let context = build_context_with_limits(
+            "test.shady".to_string(),
+            script.to_string(),
+            program,
+            limits,
+        );
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -859,7 +900,12 @@ mod tests {
             max_recursion_depth: 1000,
             max_process_count: 5,
         };
-        let context = build_context_with_limits("test.shady".to_string(), script.to_string(), program, limits);
+        let context = build_context_with_limits(
+            "test.shady".to_string(),
+            script.to_string(),
+            program,
+            limits,
+        );
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -892,7 +938,12 @@ mod tests {
             max_recursion_depth: 50,
             max_process_count: 100,
         };
-        let context = build_context_with_limits("test.shady".to_string(), script.to_string(), program, limits);
+        let context = build_context_with_limits(
+            "test.shady".to_string(),
+            script.to_string(),
+            program,
+            limits,
+        );
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),

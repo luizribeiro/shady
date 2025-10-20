@@ -188,7 +188,10 @@ fn parse_call(pair: Pair<Rule>) -> Expr {
             }
             Rule::unquoted_str_arg => {
                 let arg_span = Span::from_pest(inner_pair.as_span());
-                arguments.push(Expr::Value(Value::Str(inner_pair.as_str().to_string()), arg_span))
+                arguments.push(Expr::Value(
+                    Value::Str(inner_pair.as_str().to_string()),
+                    arg_span,
+                ))
             }
             _ => unreachable!("unknown rule type: {:?}", inner_pair.as_rule()),
         }
@@ -411,36 +414,37 @@ fn parse_program(pair: Pair<Rule>) -> Result<ProgramAST> {
 }
 
 pub fn parse_script(text: &str) -> Result<ProgramAST> {
-    let mut pairs = ShadyParser::parse(Rule::program, text)
-        .map_err(|e| {
-            // Extract span from Pest error
-            let span = match e.location {
-                pest::error::InputLocation::Pos(pos) => SourceSpan::from(pos..pos+1),
-                pest::error::InputLocation::Span((start, end)) => SourceSpan::from(start..end),
-            };
+    let mut pairs = ShadyParser::parse(Rule::program, text).map_err(|e| {
+        // Extract span from Pest error
+        let span = match e.location {
+            pest::error::InputLocation::Pos(pos) => SourceSpan::from(pos..pos + 1),
+            pest::error::InputLocation::Span((start, end)) => SourceSpan::from(start..end),
+        };
 
-            // Extract the error variant message
-            let message = match &e.variant {
-                pest::error::ErrorVariant::ParsingError { positives, negatives } => {
-                    let mut msg = String::from("unexpected token");
-                    if !positives.is_empty() {
-                        msg.push_str(&format!(", expected: {:?}", positives));
-                    }
-                    if !negatives.is_empty() {
-                        msg.push_str(&format!(", but found: {:?}", negatives));
-                    }
-                    msg
+        // Extract the error variant message
+        let message = match &e.variant {
+            pest::error::ErrorVariant::ParsingError {
+                positives,
+                negatives,
+            } => {
+                let mut msg = String::from("unexpected token");
+                if !positives.is_empty() {
+                    msg.push_str(&format!(", expected: {:?}", positives));
                 }
-                pest::error::ErrorVariant::CustomError { message } => message.clone(),
-            };
+                if !negatives.is_empty() {
+                    msg.push_str(&format!(", but found: {:?}", negatives));
+                }
+                msg
+            }
+            pest::error::ErrorVariant::CustomError { message } => message.clone(),
+        };
 
-            ShadyError::ParseErrorSimple { message, span }
-        })?;
-    let pair = pairs.next()
-        .ok_or_else(|| ShadyError::ParseErrorSimple {
-            message: "no pairs returned by parser".to_string(),
-            span: SourceSpan::from(0..0),
-        })?;
+        ShadyError::ParseErrorSimple { message, span }
+    })?;
+    let pair = pairs.next().ok_or_else(|| ShadyError::ParseErrorSimple {
+        message: "no pairs returned by parser".to_string(),
+        span: SourceSpan::from(0..0),
+    })?;
 
     if pair.as_rule() != Rule::program {
         return Err(ShadyError::ParseErrorSimple {
@@ -508,18 +512,45 @@ mod tests {
             match (self, other) {
                 (Expr::Value(v1, _), Expr::Value(v2, _)) => v1 == v2,
                 (Expr::Variable(n1, _), Expr::Variable(n2, _)) => n1 == n2,
-                (Expr::Call { fn_name: n1, arguments: a1, is_infix: i1, .. },
-                 Expr::Call { fn_name: n2, arguments: a2, is_infix: i2, .. }) => {
-                    n1 == n2 && i1 == i2 && a1.len() == a2.len() &&
-                    a1.iter().zip(a2.iter()).all(|(e1, e2)| e1.eq_ignore_spans(e2))
+                (
+                    Expr::Call {
+                        fn_name: n1,
+                        arguments: a1,
+                        is_infix: i1,
+                        ..
+                    },
+                    Expr::Call {
+                        fn_name: n2,
+                        arguments: a2,
+                        is_infix: i2,
+                        ..
+                    },
+                ) => {
+                    n1 == n2
+                        && i1 == i2
+                        && a1.len() == a2.len()
+                        && a1
+                            .iter()
+                            .zip(a2.iter())
+                            .all(|(e1, e2)| e1.eq_ignore_spans(e2))
                 }
-                (Expr::If { condition: c1, when_true: t1, when_false: f1, .. },
-                 Expr::If { condition: c2, when_true: t2, when_false: f2, .. }) => {
-                    c1.eq_ignore_spans(c2) && t1.eq_ignore_spans(t2) && f1.eq_ignore_spans(f2)
-                }
+                (
+                    Expr::If {
+                        condition: c1,
+                        when_true: t1,
+                        when_false: f1,
+                        ..
+                    },
+                    Expr::If {
+                        condition: c2,
+                        when_true: t2,
+                        when_false: f2,
+                        ..
+                    },
+                ) => c1.eq_ignore_spans(c2) && t1.eq_ignore_spans(t2) && f1.eq_ignore_spans(f2),
                 (Expr::List { elements: e1, .. }, Expr::List { elements: e2, .. }) => {
-                    e1.len() == e2.len() &&
-                    e1.iter().zip(e2.iter()).all(|(a, b)| a.eq_ignore_spans(b))
+                    e1.len() == e2.len()
+                        && e1.iter().zip(e2.iter()).all(|(a, b)| a.eq_ignore_spans(b))
                 }
                 _ => false,
             }
@@ -541,13 +572,18 @@ mod tests {
         };
         // Compare everything except spans
         assert_eq!(program.fn_definitions[0].signature, expected.signature);
-        assert!(program.fn_definitions[0].expr.eq_ignore_spans(&expected.expr));
+        assert!(program.fn_definitions[0]
+            .expr
+            .eq_ignore_spans(&expected.expr));
     }
 
     #[test]
     fn parse_function_signature() {
         assert_eq!(
-            parse_script("public ans -> int = 42;").unwrap().fn_definitions[0].signature,
+            parse_script("public ans -> int = 42;")
+                .unwrap()
+                .fn_definitions[0]
+                .signature,
             FnSignature {
                 is_public: true,
                 is_infix: false,
@@ -567,7 +603,10 @@ mod tests {
             },
         );
         assert_eq!(
-            parse_script("print $msg = echo $msg;").unwrap().fn_definitions[0].signature,
+            parse_script("print $msg = echo $msg;")
+                .unwrap()
+                .fn_definitions[0]
+                .signature,
             FnSignature {
                 is_public: false,
                 is_infix: false,
@@ -581,7 +620,10 @@ mod tests {
             },
         );
         assert_eq!(
-            parse_script("add $a: int $b: int = $a + $b;").unwrap().fn_definitions[0].signature,
+            parse_script("add $a: int $b: int = $a + $b;")
+                .unwrap()
+                .fn_definitions[0]
+                .signature,
             FnSignature {
                 is_public: false,
                 is_infix: false,
@@ -602,7 +644,10 @@ mod tests {
             },
         );
         assert_eq!(
-            parse_script("add $a: int $b: int (42) = $a + $b;").unwrap().fn_definitions[0].signature,
+            parse_script("add $a: int $b: int (42) = $a + $b;")
+                .unwrap()
+                .fn_definitions[0]
+                .signature,
             FnSignature {
                 is_public: false,
                 is_infix: false,
@@ -626,7 +671,10 @@ mod tests {
             },
         );
         assert_eq!(
-            parse_script("get $a: int (42, option) = $a;").unwrap().fn_definitions[0].signature,
+            parse_script("get $a: int (42, option) = $a;")
+                .unwrap()
+                .fn_definitions[0]
+                .signature,
             FnSignature {
                 is_public: false,
                 is_infix: false,
@@ -644,7 +692,9 @@ mod tests {
             },
         );
         assert_eq!(
-            parse_script("add $a: [int] $b: [[int]] -> [int] = [1; 2];").unwrap().fn_definitions[0]
+            parse_script("add $a: [int] $b: [[int]] -> [int] = [1; 2];")
+                .unwrap()
+                .fn_definitions[0]
                 .signature,
             FnSignature {
                 is_public: false,

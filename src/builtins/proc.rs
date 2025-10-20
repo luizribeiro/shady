@@ -39,7 +39,8 @@ fn stdout(mut proc: Proc) -> Result<String> {
     if !atty::is(atty::Stream::Stdin) {
         stdin_thread.join().map_err(|_| ShadyError::ThreadPanic)?;
     }
-    proc.stdout_reader.read_to_string(&mut output)
+    proc.stdout_reader
+        .read_to_string(&mut output)
         .map_err(|e| ShadyError::IoError(format!("failed to read stdout: {}", e)))?;
     stderr_thread.join().map_err(|_| ShadyError::ThreadPanic)?;
 
@@ -57,7 +58,8 @@ fn pipe_stdout(a: Proc, b: Proc) -> Result<Proc> {
     let (stderr_reader, stderr_writer) = os_pipe::pipe()
         .map_err(|e| ShadyError::IoError(format!("failed to create pipe: {}", e)))?;
     redirect(a.stdout_reader, b.stdin_writer);
-    let stderr_writer_clone = stderr_writer.try_clone()
+    let stderr_writer_clone = stderr_writer
+        .try_clone()
         .map_err(|e| ShadyError::PipeCloneError(format!("failed to clone stderr pipe: {}", e)))?;
     redirect(a.stderr_reader, stderr_writer_clone);
     redirect(b.stderr_reader, stderr_writer);
