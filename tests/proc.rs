@@ -137,3 +137,47 @@ fn test_exec_status_code() {
     .stdout("1\n")
     .code(0);
 }
+
+#[test]
+fn test_list_argument_int() {
+    call_main(
+        "public main $nums: [int] = exec (echo (add_all($nums)));",
+        &["1,2,3,4,5"],
+    )
+    .assert()
+    .success()
+    .stdout("15\n");
+}
+
+#[test]
+fn test_list_argument_str() {
+    call_main(
+        r#"public main $words: [str] = exec (echo (first($words)));"#,
+        &["hello,world,test"],
+    )
+    .assert()
+    .success()
+    .stdout("hello\n");
+}
+
+#[test]
+fn test_list_argument_empty() {
+    call_main(
+        "public main $nums: [int] = exec (echo (add_all($nums)));",
+        &[""],
+    )
+    .assert()
+    .success()
+    .stdout("0\n");
+}
+
+#[test]
+fn test_list_argument_with_spaces() {
+    call_main(
+        "public main $nums: [int] = exec (echo (add_all($nums)));",
+        &["1, 2, 3"],
+    )
+    .assert()
+    .success()
+    .stdout("6\n");
+}

@@ -34,7 +34,7 @@ fn get_command(context: &ShadyContext) -> clap::Command {
                 Type::Int => arg.value_parser(value_parser!(i64)),
                 Type::Str => arg.value_parser(value_parser!(String)),
                 Type::Bool => arg.value_parser(value_parser!(bool)),
-                Type::List(_) => todo!(),
+                Type::List(_) => arg.value_parser(value_parser!(String)),
                 // TODO: make it impossible to have public methods with certain types as a
                 // parameter
                 Type::Proc => unreachable!(),

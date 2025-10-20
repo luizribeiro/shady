@@ -307,10 +307,26 @@ pub fn from_string(typ: &Type, s: &str) -> Result<Value> {
                     to: "bool".to_string(),
                 })
         }
-        Type::List(_) => Err(ShadyError::InvalidConversion {
-            from: "string".to_string(),
-            to: "list".to_string(),
-        }),
+        Type::List(inner_type) => {
+            // Empty string means empty list
+            if s.trim().is_empty() {
+                return Ok(Value::List {
+                    inner_type: (**inner_type).clone(),
+                    values: vec![],
+                });
+            }
+
+            // Parse comma-separated values
+            let values: Result<Vec<Value>> = s
+                .split(',')
+                .map(|item| from_string(inner_type, item.trim()))
+                .collect();
+
+            Ok(Value::List {
+                inner_type: (**inner_type).clone(),
+                values: values?,
+            })
+        }
         Type::Proc => Err(ShadyError::InvalidConversion {
             from: "string".to_string(),
             to: "proc".to_string(),
@@ -319,5 +335,83 @@ pub fn from_string(typ: &Type, s: &str) -> Result<Value> {
             from: "string".to_string(),
             to: "any".to_string(),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_string_list_int() {
+        let typ = Type::List(Box::new(Type::Int));
+        let result = from_string(&typ, "1,2,3").unwrap();
+
+        match result {
+            Value::List { inner_type, values } => {
+                assert_eq!(inner_type, Type::Int);
+                assert_eq!(values.len(), 3);
+                assert_eq!(values[0], Value::Int(1));
+                assert_eq!(values[1], Value::Int(2));
+                assert_eq!(values[2], Value::Int(3));
+            }
+            _ => panic!("Expected List value"),
+        }
+    }
+
+    #[test]
+    fn test_from_string_list_str() {
+        let typ = Type::List(Box::new(Type::Str));
+        let result = from_string(&typ, "hello,world,test").unwrap();
+
+        match result {
+            Value::List { inner_type, values } => {
+                assert_eq!(inner_type, Type::Str);
+                assert_eq!(values.len(), 3);
+                assert_eq!(values[0], Value::Str("hello".to_string()));
+                assert_eq!(values[1], Value::Str("world".to_string()));
+                assert_eq!(values[2], Value::Str("test".to_string()));
+            }
+            _ => panic!("Expected List value"),
+        }
+    }
+
+    #[test]
+    fn test_from_string_list_with_spaces() {
+        let typ = Type::List(Box::new(Type::Int));
+        let result = from_string(&typ, "1, 2, 3").unwrap();
+
+        match result {
+            Value::List { inner_type, values } => {
+                assert_eq!(inner_type, Type::Int);
+                assert_eq!(values.len(), 3);
+                assert_eq!(values[0], Value::Int(1));
+                assert_eq!(values[1], Value::Int(2));
+                assert_eq!(values[2], Value::Int(3));
+            }
+            _ => panic!("Expected List value"),
+        }
+    }
+
+    #[test]
+    fn test_from_string_empty_list() {
+        let typ = Type::List(Box::new(Type::Int));
+        let result = from_string(&typ, "").unwrap();
+
+        match result {
+            Value::List { inner_type, values } => {
+                assert_eq!(inner_type, Type::Int);
+                assert_eq!(values.len(), 0);
+            }
+            _ => panic!("Expected List value"),
+        }
+    }
+
+    #[test]
+    fn test_from_string_list_invalid_element() {
+        let typ = Type::List(Box::new(Type::Int));
+        let result = from_string(&typ, "1,invalid,3");
+
+        assert!(result.is_err());
     }
 }
