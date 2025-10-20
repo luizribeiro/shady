@@ -78,10 +78,10 @@ fn pipe_stdout_reversed(a: Proc, b: Proc) -> Result<Proc> {
     pipe_stdout(b, a)
 }
 
-fn redirect<'a, R: Send + 'static, W: Send + 'static>(mut a: R, mut b: W) -> thread::JoinHandle<()>
+fn redirect<'a, R, W>(mut a: R, mut b: W) -> thread::JoinHandle<()>
 where
-    R: Read,
-    W: Write,
+    R: Read + Send + 'static,
+    W: Write + Send + 'static,
 {
     // TODO: move to async I/O instead of threading
     thread::spawn(move || {
