@@ -34,7 +34,7 @@ impl Span {
 
     /// Convert to miette's SourceSpan for error reporting
     pub fn to_source_span(&self) -> SourceSpan {
-        SourceSpan::new(self.offset.into(), self.length.into())
+        SourceSpan::new(self.offset.into(), self.length)
     }
 }
 
