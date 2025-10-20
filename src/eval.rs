@@ -38,6 +38,34 @@ fn get_builtins_by_name<'a>(
     }
 }
 
+/// Check if a call signature matches a function definition signature
+fn signature_matches(definition: &FnSignature, call: &FnSignature) -> bool {
+    // Check that we have the right number of arguments
+    // (accounting for default values)
+    let required_params = definition.parameters.iter()
+        .filter(|p| p.spec.default_value.is_none())
+        .count();
+    let total_params = definition.parameters.len();
+    let provided_args = call.parameters.len();
+
+    if provided_args < required_params || provided_args > total_params {
+        return false;
+    }
+
+    // Check that types match for all provided arguments
+    for (i, provided_param) in call.parameters.iter().enumerate() {
+        if let Some(expected_param) = definition.parameters.get(i) {
+            if provided_param.typ != expected_param.typ {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
+    true
+}
+
 pub struct ShadyContext {
     pub filename: String,
     pub program: ProgramAST,
@@ -203,6 +231,13 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
     }
 
     if let Some(fun) = get_fn_by_name(&context.program, &signature.fn_name) {
+        // Validate that the call signature matches the function definition
+        if !signature_matches(&fun.signature, &signature) {
+            return Err(ShadyError::FunctionSignatureMismatch {
+                name: signature.fn_name.clone(),
+                arg_types: format!("expected signature: {}", fun.signature),
+            });
+        }
         return eval_local_fn(context, fun, &arguments);
     }
 
@@ -586,6 +621,67 @@ mod tests {
         assert_eq!(
             eval_script("main = (((((1 + 2) * 3) - 4) / 5) ^ 2);"),
             Value::Int(1), // ((((3) * 3) - 4) / 5) ^ 2 = ((9 - 4) / 5) ^ 2 = (5 / 5) ^ 2 = 1 ^ 2 = 1
+        );
+    }
+
+    #[test]
+    fn eval_user_function_signature_mismatch_fails() {
+        // Test that user-defined functions validate signatures at call time
+        let program = parse_script(
+            r"#
+                main = custom_add 1 true;
+                custom_add $a: int $b: int = $a + $b;
+            #"
+        ).unwrap();
+        let context = build_context("test.shady".to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let result = eval_local_fn(&context, fun, &[]);
+
+        assert!(result.is_err());
+        // The function expects (int, int) but we're calling with (int, bool)
+        // This should now be caught at call time, not during body evaluation
+        match result.unwrap_err() {
+            ShadyError::FunctionSignatureMismatch { name, arg_types } => {
+                assert_eq!(name, "custom_add");
+                assert!(arg_types.contains("expected signature"));
+            }
+            e => panic!("Expected FunctionSignatureMismatch error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_user_function_wrong_arg_count_fails() {
+        // Test that calling with wrong number of arguments fails
+        let program = parse_script(
+            r"#
+                main = takes_two 1;
+                takes_two $a: int $b: int = $a + $b;
+            #"
+        ).unwrap();
+        let context = build_context("test.shady".to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let result = eval_local_fn(&context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::FunctionSignatureMismatch { name, .. } => {
+                assert_eq!(name, "takes_two");
+            }
+            e => panic!("Expected FunctionSignatureMismatch error for wrong arg count, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_user_function_with_defaults_still_works() {
+        // Test that functions with default values still work correctly
+        assert_eq!(
+            eval_script(
+                r"#
+                    public main = add_with_default 5;
+                    add_with_default $a: int $b: int (10) = $a + $b;
+                #"
+            ),
+            Value::Int(15),
         );
     }
 }
