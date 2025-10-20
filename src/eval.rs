@@ -62,6 +62,15 @@ pub fn build_context(filename: String, program: ProgramAST) -> ShadyContext {
 }
 
 pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Result<Value> {
+    eval_expr_with_type(local_context, context, expr, None)
+}
+
+pub fn eval_expr_with_type(
+    local_context: &LocalContext,
+    context: &ShadyContext,
+    expr: &Expr,
+    expected_type: Option<&Type>,
+) -> Result<Value> {
     match expr {
         Expr::Value(value) => Ok(value.clone()),
         Expr::Variable(var_name) => {
@@ -75,10 +84,10 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
             when_true,
             when_false,
         } => {
-            let cond_val = eval_expr(local_context, context, condition)?;
+            let cond_val = eval_expr_with_type(local_context, context, condition, Some(&Type::Bool))?;
             match cond_val {
-                Value::Bool(true) => eval_expr(local_context, context, when_true),
-                Value::Bool(false) => eval_expr(local_context, context, when_false),
+                Value::Bool(true) => eval_expr_with_type(local_context, context, when_true, expected_type),
+                Value::Bool(false) => eval_expr_with_type(local_context, context, when_false, expected_type),
                 _ => Err(ShadyError::TypeMismatch {
                     expected: "bool".to_string(),
                     actual: format!("{:?}", cond_val.get_type()),
@@ -86,14 +95,27 @@ pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Ex
             }
         }
         Expr::List { elements } => {
+            // Extract inner type from expected type if it's a list type
+            let expected_inner_type = expected_type.and_then(|t| match t {
+                Type::List(inner) => Some(inner.as_ref()),
+                _ => None,
+            });
+
             let values: Vec<Value> = elements
                 .iter()
-                .map(|e| eval_expr(local_context, context, e))
+                .map(|e| eval_expr_with_type(local_context, context, e, expected_inner_type))
                 .collect::<Result<Vec<Value>>>()?;
+
             let inner_type = match values.len() {
-                0 => return Err(ShadyError::EmptyListNeedsType),
+                0 => {
+                    // Use expected type for empty lists
+                    expected_inner_type
+                        .cloned()
+                        .ok_or(ShadyError::EmptyListNeedsType)?
+                }
                 _ => values[0].get_type(),
             };
+
             if !values.iter().all(|v| v.get_type() == inner_type) {
                 return Err(ShadyError::TypeMismatch {
                     expected: format!("[{}]", inner_type),
@@ -128,14 +150,62 @@ fn build_signature(call: &Expr, types: Vec<Type>) -> FnSignature {
 }
 
 fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Result<Value> {
-    let arguments = match expr {
-        Expr::Call { arguments, .. } => arguments
-            .iter()
-            .map(|arg| eval_expr(local_context, context, arg))
-            .collect::<Result<Vec<Value>>>()?,
+    let (fn_name, arg_exprs, is_infix) = match expr {
+        Expr::Call { fn_name, arguments, is_infix } => (fn_name, arguments, *is_infix),
         _ => return Err(ShadyError::EvalError("not a call".to_string())),
     };
-    let signature = build_signature(expr, arguments.iter().map(|a| a.get_type()).collect());
+
+    // Try to find the function to get parameter types
+    let param_types: Option<Vec<Type>> = {
+        // Check if it's a user-defined function
+        if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
+            Some(fun.signature.parameters.iter().map(|p| p.typ.clone()).collect())
+        } else {
+            // Check builtins by name to get possible signatures
+            if let Some(builtin_sigs) = get_builtins_by_name(context, fn_name) {
+                // For now, just take the first signature's parameter types
+                // In the future, we could be smarter about overload resolution
+                builtin_sigs.first().map(|sig| {
+                    sig.parameters.iter().map(|p| p.typ.clone()).collect()
+                })
+            } else {
+                None
+            }
+        }
+    };
+
+    // Evaluate arguments with expected types if available
+    let arguments: Vec<Value> = if let Some(ref types) = param_types {
+        arg_exprs
+            .iter()
+            .enumerate()
+            .map(|(i, arg)| {
+                let expected = types.get(i);
+                eval_expr_with_type(local_context, context, arg, expected)
+            })
+            .collect::<Result<Vec<Value>>>()?
+    } else {
+        // No type information available, evaluate without expected types
+        arg_exprs
+            .iter()
+            .map(|arg| eval_expr(local_context, context, arg))
+            .collect::<Result<Vec<Value>>>()?
+    };
+
+    let signature = FnSignature {
+        fn_name: fn_name.to_string(),
+        parameters: arguments
+            .iter()
+            .map(|v| Parameter {
+                name: "".to_string(),
+                typ: v.get_type(),
+                spec: ParamSpec::default(),
+            })
+            .collect(),
+        is_public: true,
+        is_infix,
+        return_type: Type::Any,
+    };
 
     if let Some(builtin_fn) = get_builtin_fn(context, &signature) {
         return builtin_fn(arguments);
@@ -205,7 +275,14 @@ pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value])
         })
         .collect();
     let local_context = LocalContext { vars };
-    eval_expr(&local_context, context, &fun.expr)
+
+    // Use return type as expected type if it's not Type::Any
+    let expected_type = match &fun.signature.return_type {
+        Type::Any => None,
+        t => Some(t),
+    };
+
+    eval_expr_with_type(&local_context, context, &fun.expr, expected_type)
 }
 
 #[cfg(test)]
@@ -313,6 +390,144 @@ mod tests {
             Value::List {
                 inner_type: Type::Int,
                 values: vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4)],
+            },
+        );
+    }
+
+    // Empty list tests
+    #[test]
+    fn eval_empty_list_with_int_context() {
+        // Empty list passed to function expecting [int]
+        assert_eq!(
+            eval_script(
+                r"#
+                    public main = identity_int [];
+                    identity_int $x: [int] = $x;
+                #"
+            ),
+            Value::List {
+                inner_type: Type::Int,
+                values: vec![],
+            },
+        );
+    }
+
+    #[test]
+    fn eval_empty_list_with_str_context() {
+        // Empty list passed to function expecting [str]
+        assert_eq!(
+            eval_script(
+                r"#
+                    public main = identity_str [];
+                    identity_str $x: [str] = $x;
+                #"
+            ),
+            Value::List {
+                inner_type: Type::Str,
+                values: vec![],
+            },
+        );
+    }
+
+    #[test]
+    fn eval_empty_list_with_bool_context() {
+        // Empty list passed to function expecting [bool]
+        assert_eq!(
+            eval_script(
+                r"#
+                    public main = identity_bool [];
+                    identity_bool $x: [bool] = $x;
+                #"
+            ),
+            Value::List {
+                inner_type: Type::Bool,
+                values: vec![],
+            },
+        );
+    }
+
+    #[test]
+    fn eval_empty_list_concat_with_non_empty() {
+        // Empty list concatenated with non-empty list via builtin
+        assert_eq!(
+            eval_script(
+                r"#
+                    public main = concat_lists [] [1; 2; 3];
+                    concat_lists $x: [int] $y: [int] = $x + $y;
+                #"
+            ),
+            Value::List {
+                inner_type: Type::Int,
+                values: vec![Value::Int(1), Value::Int(2), Value::Int(3)],
+            },
+        );
+    }
+
+    #[test]
+    fn eval_empty_list_concat_both_empty() {
+        // Both lists empty - should infer from function signature
+        assert_eq!(
+            eval_script(
+                r"#
+                    public main = concat_lists [] [];
+                    concat_lists $x: [int] $y: [int] = $x + $y;
+                #"
+            ),
+            Value::List {
+                inner_type: Type::Int,
+                values: vec![],
+            },
+        );
+    }
+
+    #[test]
+    fn eval_empty_list_in_if_branches() {
+        // Empty list in both branches of if expression
+        assert_eq!(
+            eval_script(
+                r"#
+                    public main = get_list true;
+                    get_list $cond: bool -> [int] = if ($cond) [] else [];
+                #"
+            ),
+            Value::List {
+                inner_type: Type::Int,
+                values: vec![],
+            },
+        );
+    }
+
+    #[test]
+    fn eval_empty_list_without_context_fails() {
+        // Empty list without any type context should still fail
+        let program = parse_script("main = [];").unwrap();
+        let context = build_context("test.shady".to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let result = eval_local_fn(&context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::EmptyListNeedsType => {},
+            e => panic!("Expected EmptyListNeedsType error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_nested_empty_list() {
+        // Empty list inside a list (nested)
+        assert_eq!(
+            eval_script(
+                r"#
+                    public main = identity_nested [[]];
+                    identity_nested $x: [[int]] = $x;
+                #"
+            ),
+            Value::List {
+                inner_type: Type::List(Box::new(Type::Int)),
+                values: vec![Value::List {
+                    inner_type: Type::Int,
+                    values: vec![],
+                }],
             },
         );
     }
