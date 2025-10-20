@@ -3,6 +3,7 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use crate::error::{Result, ShadyError};
+use miette::SourceSpan;
 
 #[derive(Debug, Clone, Eq)]
 pub enum Type {
@@ -160,6 +161,7 @@ impl PrimitiveValue for i64 {
             _ => Err(ShadyError::TypeMismatch {
                 expected: "int".to_string(),
                 actual: format!("{:?}", value.get_type()),
+                span: SourceSpan::from(0..0),
             }),
         }
     }
@@ -180,6 +182,7 @@ impl PrimitiveValue for String {
             _ => Err(ShadyError::TypeMismatch {
                 expected: "str".to_string(),
                 actual: format!("{:?}", value.get_type()),
+                span: SourceSpan::from(0..0),
             }),
         }
     }
@@ -200,6 +203,7 @@ impl PrimitiveValue for bool {
             _ => Err(ShadyError::TypeMismatch {
                 expected: "bool".to_string(),
                 actual: format!("{:?}", value.get_type()),
+                span: SourceSpan::from(0..0),
             }),
         }
     }
@@ -221,6 +225,7 @@ impl<T: PrimitiveValue> PrimitiveValue for Vec<T> {
                     return Err(ShadyError::TypeMismatch {
                         expected: format!("[{}]", T::value_type()),
                         actual: format!("[{:?}]", inner_type),
+                        span: SourceSpan::from(0..0),
                     });
                 }
                 values.into_iter()
@@ -230,6 +235,7 @@ impl<T: PrimitiveValue> PrimitiveValue for Vec<T> {
             _ => Err(ShadyError::TypeMismatch {
                 expected: "list".to_string(),
                 actual: format!("{:?}", value.get_type()),
+                span: SourceSpan::from(0..0),
             }),
         }
     }
@@ -253,6 +259,7 @@ impl PrimitiveValue for Proc {
             _ => Err(ShadyError::TypeMismatch {
                 expected: "proc".to_string(),
                 actual: format!("{:?}", value.get_type()),
+                span: SourceSpan::from(0..0),
             }),
         }
     }

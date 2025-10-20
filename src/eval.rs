@@ -84,6 +84,10 @@ fn signature_matches(definition: &FnSignature, call: &FnSignature) -> bool {
 
 pub struct ShadyContext {
     pub filename: String,
+    // Source code is stored for potential future use in error reporting
+    // Currently, main.rs handles source code attachment to errors separately
+    #[allow(dead_code)]
+    pub source: String,
     pub program: ProgramAST,
     builtins: BuiltinIndex,
     pub limits: ResourceLimits,
@@ -96,12 +100,13 @@ pub struct LocalContext {
     pub depth: usize,
 }
 
-pub fn build_context(filename: String, program: ProgramAST) -> ShadyContext {
-    build_context_with_limits(filename, program, ResourceLimits::default())
+pub fn build_context(filename: String, source: String, program: ProgramAST) -> ShadyContext {
+    build_context_with_limits(filename, source, program, ResourceLimits::default())
 }
 
 pub fn build_context_with_limits(
     filename: String,
+    source: String,
     program: ProgramAST,
     limits: ResourceLimits,
 ) -> ShadyContext {
@@ -111,6 +116,7 @@ pub fn build_context_with_limits(
 
     ShadyContext {
         filename,
+        source,
         program,
         builtins,
         limits,
@@ -130,17 +136,21 @@ pub fn eval_expr_with_type(
     }
 
     match expr {
-        Expr::Value(value) => Ok(value.clone()),
-        Expr::Variable(var_name) => {
+        Expr::Value(value, _) => Ok(value.clone()),
+        Expr::Variable(var_name, span) => {
             local_context.vars.get(var_name)
                 .cloned()
-                .ok_or_else(|| ShadyError::VariableNotFound(var_name.clone()))
+                .ok_or_else(|| ShadyError::VariableNotFound {
+                    name: var_name.clone(),
+                    span: span.to_source_span(),
+                })
         }
         Expr::Call { .. } => eval_fn(local_context, context, expr),
         Expr::If {
             condition,
             when_true,
             when_false,
+            ..
         } => {
             let cond_val = eval_expr_with_type(local_context, context, condition, Some(&Type::Bool))?;
             match cond_val {
@@ -149,10 +159,11 @@ pub fn eval_expr_with_type(
                 _ => Err(ShadyError::TypeMismatch {
                     expected: "bool".to_string(),
                     actual: format!("{:?}", cond_val.get_type()),
+                    span: condition.span().to_source_span(),
                 }),
             }
         }
-        Expr::List { elements } => {
+        Expr::List { elements, span } => {
             // Extract inner type from expected type if it's a list type
             let expected_inner_type = expected_type.and_then(|t| match t {
                 Type::List(inner) => Some(inner.as_ref()),
@@ -169,7 +180,9 @@ pub fn eval_expr_with_type(
                     // Use expected type for empty lists
                     expected_inner_type
                         .cloned()
-                        .ok_or(ShadyError::EmptyListNeedsType)?
+                        .ok_or(ShadyError::EmptyListNeedsType {
+                            span: span.to_source_span(),
+                        })?
                 }
                 _ => values[0].get_type(),
             };
@@ -178,6 +191,7 @@ pub fn eval_expr_with_type(
                 return Err(ShadyError::TypeMismatch {
                     expected: format!("[{}]", inner_type),
                     actual: "mixed types in list".to_string(),
+                    span: span.to_source_span(),
                 });
             }
             Ok(Value::List { inner_type, values })
@@ -186,8 +200,8 @@ pub fn eval_expr_with_type(
 }
 
 fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Result<Value> {
-    let (fn_name, arg_exprs, is_infix) = match expr {
-        Expr::Call { fn_name, arguments, is_infix } => (fn_name, arguments, *is_infix),
+    let (fn_name, arg_exprs, is_infix, call_span) = match expr {
+        Expr::Call { fn_name, arguments, is_infix, span } => (fn_name, arguments, *is_infix, span),
         _ => return Err(ShadyError::EvalError("not a call".to_string())),
     };
 
@@ -257,6 +271,7 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
                     .collect::<Vec<String>>()
                     .join("\n")
             ),
+            span: call_span.to_source_span(),
         });
     }
 
@@ -266,6 +281,7 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
             return Err(ShadyError::FunctionSignatureMismatch {
                 name: signature.fn_name.clone(),
                 arg_types: format!("expected signature: {}", fun.signature),
+                span: call_span.to_source_span(),
             });
         }
         return eval_local_fn(local_context, context, fun, &arguments);
@@ -356,7 +372,7 @@ mod tests {
 
     fn eval_script(script: &str) -> Value {
         let program = parse_script(script).expect("parse failed");
-        let context = build_context("test.shady".to_string(), program);
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").expect("main function not found");
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -567,8 +583,9 @@ mod tests {
     #[test]
     fn eval_empty_list_without_context_fails() {
         // Empty list without any type context should still fail
-        let program = parse_script("main = [];").unwrap();
-        let context = build_context("test.shady".to_string(), program);
+        let script = "main = [];";
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -578,7 +595,7 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            ShadyError::EmptyListNeedsType => {},
+            ShadyError::EmptyListNeedsType { .. } => {},
             e => panic!("Expected EmptyListNeedsType error, got {:?}", e),
         }
     }
@@ -606,8 +623,9 @@ mod tests {
     // Error case tests
     #[test]
     fn eval_undefined_variable_fails() {
-        let program = parse_script("main = $foo;").unwrap();
-        let context = build_context("test.shady".to_string(), program);
+        let script = "main = $foo;";
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -617,15 +635,16 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            ShadyError::VariableNotFound(name) => assert_eq!(name, "foo"),
+            ShadyError::VariableNotFound { name, .. } => assert_eq!(name, "foo"),
             e => panic!("Expected VariableNotFound error, got {:?}", e),
         }
     }
 
     #[test]
     fn eval_type_mismatch_in_if_condition_fails() {
-        let program = parse_script("main = if (42) 1 else 2;").unwrap();
-        let context = build_context("test.shady".to_string(), program);
+        let script = "main = if (42) 1 else 2;";
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -635,7 +654,7 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            ShadyError::TypeMismatch { expected, actual } => {
+            ShadyError::TypeMismatch { expected, actual, .. } => {
                 assert_eq!(expected, "bool");
                 assert!(actual.contains("int") || actual.contains("Int"));
             }
@@ -645,13 +664,12 @@ mod tests {
 
     #[test]
     fn eval_mixed_types_in_list_fails() {
-        let program = parse_script(
-            r"#
+        let script = r"#
                 main = mixed_list;
                 mixed_list = [1; true];
-            #"
-        ).unwrap();
-        let context = build_context("test.shady".to_string(), program);
+            #";
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -669,8 +687,9 @@ mod tests {
     #[test]
     fn eval_builtin_signature_mismatch_gives_helpful_error() {
         // Test that calling a builtin with wrong types gives helpful error
-        let program = parse_script("main = 1 + true;").unwrap();
-        let context = build_context("test.shady".to_string(), program);
+        let script = "main = 1 + true;";
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -681,7 +700,7 @@ mod tests {
         assert!(result.is_err());
         // The + operator exists for (int, int) but we're passing (int, bool)
         match result.unwrap_err() {
-            ShadyError::FunctionSignatureMismatch { name, arg_types } => {
+            ShadyError::FunctionSignatureMismatch { name, arg_types, .. } => {
                 assert_eq!(name, "+");
                 assert!(arg_types.contains("did you mean one of these?"));
             }
@@ -701,13 +720,12 @@ mod tests {
     #[test]
     fn eval_user_function_signature_mismatch_fails() {
         // Test that user-defined functions validate signatures at call time
-        let program = parse_script(
-            r"#
+        let script = r"#
                 main = custom_add 1 true;
                 custom_add $a: int $b: int = $a + $b;
-            #"
-        ).unwrap();
-        let context = build_context("test.shady".to_string(), program);
+            #";
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -719,7 +737,7 @@ mod tests {
         // The function expects (int, int) but we're calling with (int, bool)
         // This should now be caught at call time, not during body evaluation
         match result.unwrap_err() {
-            ShadyError::FunctionSignatureMismatch { name, arg_types } => {
+            ShadyError::FunctionSignatureMismatch { name, arg_types, .. } => {
                 assert_eq!(name, "custom_add");
                 assert!(arg_types.contains("expected signature"));
             }
@@ -730,13 +748,12 @@ mod tests {
     #[test]
     fn eval_user_function_wrong_arg_count_fails() {
         // Test that calling with wrong number of arguments fails
-        let program = parse_script(
-            r"#
+        let script = r"#
                 main = takes_two 1;
                 takes_two $a: int $b: int = $a + $b;
-            #"
-        ).unwrap();
-        let context = build_context("test.shady".to_string(), program);
+            #";
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -771,19 +788,18 @@ mod tests {
     #[test]
     fn eval_recursion_limit_exceeded() {
         // Test that recursion depth limit is enforced
-        let program = parse_script(
-            r"#
+        let script = r"#
                 public main = infinite 0;
                 infinite $x: int = infinite ($x + 1);
-            #"
-        ).unwrap();
+            #";
+        let program = parse_script(script).unwrap();
 
         // Set a low recursion limit for testing
         let limits = ResourceLimits {
             max_recursion_depth: 10,
             max_process_count: 100,
         };
-        let context = build_context_with_limits("test.shady".to_string(), program, limits);
+        let context = build_context_with_limits("test.shady".to_string(), script.to_string(), program, limits);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -803,21 +819,20 @@ mod tests {
     #[test]
     fn eval_process_limit_exceeded() {
         // Test that process count limit is enforced
-        let program = parse_script(
-            r"#
+        let script = r"#
                 public main = spawn_many 0;
                 spawn_many $x: int = if ($x < 20)
                     (spawn_many ($x + 1)) + (exec (echo test))
                     else 0;
-            #"
-        ).unwrap();
+            #";
+        let program = parse_script(script).unwrap();
 
         // Set a low process limit for testing
         let limits = ResourceLimits {
             max_recursion_depth: 1000,
             max_process_count: 5,
         };
-        let context = build_context_with_limits("test.shady".to_string(), program, limits);
+        let context = build_context_with_limits("test.shady".to_string(), script.to_string(), program, limits);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -837,12 +852,11 @@ mod tests {
     #[test]
     fn eval_recursion_within_limit_works() {
         // Test that recursion within the limit works fine
-        let program = parse_script(
-            r"#
+        let script = r"#
                 public main = countdown 3;
                 countdown $x: int = if ($x > 0) countdown ($x - 1) else 0;
-            #"
-        ).unwrap();
+            #";
+        let program = parse_script(script).unwrap();
 
         // Set a limit that should be sufficient for countdown(3)
         // Need enough for: main call + countdown(3) + countdown(2) + countdown(1) + countdown(0)
@@ -851,7 +865,7 @@ mod tests {
             max_recursion_depth: 50,
             max_process_count: 100,
         };
-        let context = build_context_with_limits("test.shady".to_string(), program, limits);
+        let context = build_context_with_limits("test.shady".to_string(), script.to_string(), program, limits);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),

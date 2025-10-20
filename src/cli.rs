@@ -7,6 +7,7 @@ use crate::eval::ShadyContext;
 use crate::types::{from_string, Type};
 
 use clap::{command, value_parser, Arg, Command};
+use miette::SourceSpan;
 
 // Note: Box::leak is used to convert Strings to 'static str for clap's API.
 // This is an acceptable tradeoff because:
@@ -66,7 +67,8 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
     let subcmd_name = matches.subcommand_name().unwrap_or("main");
     let fun = ast::get_fn_by_name(&context.program, subcmd_name)
         .ok_or_else(|| crate::error::ShadyError::FunctionNotFound {
-            name: subcmd_name.to_string()
+            name: subcmd_name.to_string(),
+            span: SourceSpan::from(0..0),
         })?;
     if let Some(args) = matches.subcommand_matches(subcmd_name) {
         for param in &fun.signature.parameters {
