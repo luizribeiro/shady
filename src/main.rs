@@ -5,6 +5,7 @@ extern crate pest_derive;
 mod ast;
 mod builtins;
 mod cli;
+mod error;
 mod eval;
 mod types;
 
@@ -43,5 +44,8 @@ fn main() {
     let mut script_args = vec![args.filename.clone()];
     script_args.extend(args.args);
 
-    cli::run_fn(&context, &script_args);
+    if let Err(e) = cli::run_fn(&context, &script_args) {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
 }

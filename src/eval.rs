@@ -6,14 +6,15 @@ use crate::ast::{
     get_fn_by_name, Expr, FnDefinition, FnSignature, ParamSpec, Parameter, ProgramAST,
 };
 use crate::builtins;
+use crate::error::{Result, ShadyError};
 use crate::types::{Proc, Type, Value};
 
-pub type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Value>>;
+pub type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Result<Value>>>;
 
 fn get_builtin_fn<'a>(
     context: &'a ShadyContext,
     signature: &'a FnSignature,
-) -> Option<&'a dyn Fn(Vec<Value>) -> Value> {
+) -> Option<&'a dyn Fn(Vec<Value>) -> Result<Value>> {
     match context.builtins.get_key_value(signature) {
         Some((_, f)) => Some(f.as_ref()),
         None => None,
@@ -60,39 +61,46 @@ pub fn build_context(filename: String, program: ProgramAST) -> ShadyContext {
     }
 }
 
-pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Value {
+pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Result<Value> {
     match expr {
-        Expr::Value(value) => value.clone(),
+        Expr::Value(value) => Ok(value.clone()),
         Expr::Variable(var_name) => {
-            let value = local_context.vars.get(var_name);
-            match value {
-                Some(v) => v.clone(),
-                None => panic!("variable {var_name} not found"),
-            }
+            local_context.vars.get(var_name)
+                .cloned()
+                .ok_or_else(|| ShadyError::VariableNotFound(var_name.clone()))
         }
         Expr::Call { .. } => eval_fn(local_context, context, expr),
         Expr::If {
             condition,
             when_true,
             when_false,
-        } => match eval_expr(local_context, context, condition) {
-            Value::Bool(true) => eval_expr(local_context, context, when_true),
-            Value::Bool(false) => eval_expr(local_context, context, when_false),
-            _ => panic!("if condition must return a boolean"),
-        },
+        } => {
+            let cond_val = eval_expr(local_context, context, condition)?;
+            match cond_val {
+                Value::Bool(true) => eval_expr(local_context, context, when_true),
+                Value::Bool(false) => eval_expr(local_context, context, when_false),
+                _ => Err(ShadyError::TypeMismatch {
+                    expected: "bool".to_string(),
+                    actual: format!("{:?}", cond_val.get_type()),
+                }),
+            }
+        }
         Expr::List { elements } => {
             let values: Vec<Value> = elements
                 .iter()
                 .map(|e| eval_expr(local_context, context, e))
-                .collect();
+                .collect::<Result<Vec<Value>>>()?;
             let inner_type = match values.len() {
-                0 => todo!("empty lists are not supported"),
+                0 => return Err(ShadyError::EmptyListNeedsType),
                 _ => values[0].get_type(),
             };
             if !values.iter().all(|v| v.get_type() == inner_type) {
-                panic!("list elements must be of the same type");
+                return Err(ShadyError::TypeMismatch {
+                    expected: format!("[{}]", inner_type),
+                    actual: "mixed types in list".to_string(),
+                });
             }
-            Value::List { inner_type, values }
+            Ok(Value::List { inner_type, values })
         }
     }
 }
@@ -119,13 +127,13 @@ fn build_signature(call: &Expr, types: Vec<Type>) -> FnSignature {
     }
 }
 
-fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Value {
+fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Result<Value> {
     let arguments = match expr {
         Expr::Call { arguments, .. } => arguments
             .iter()
             .map(|arg| eval_expr(local_context, context, arg))
-            .collect::<Vec<Value>>(),
-        _ => panic!("not a call"),
+            .collect::<Result<Vec<Value>>>()?,
+        _ => return Err(ShadyError::EvalError("not a call".to_string())),
     };
     let signature = build_signature(expr, arguments.iter().map(|a| a.get_type()).collect());
 
@@ -134,14 +142,16 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
     }
 
     if let Some(fns) = get_builtins_by_name(context, &signature.fn_name) {
-        panic!(
-            "function {} not found, did you mean one of these?\n{}",
-            signature,
-            fns.iter()
-                .map(|s| format!("  {}", s))
-                .collect::<Vec<String>>()
-                .join("\n"),
-        );
+        return Err(ShadyError::FunctionSignatureMismatch {
+            name: signature.fn_name.clone(),
+            arg_types: format!(
+                "did you mean one of these?\n{}",
+                fns.iter()
+                    .map(|s| format!("  {}", s))
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            ),
+        });
     }
 
     if let Some(fun) = get_fn_by_name(&context.program, &signature.fn_name) {
@@ -150,33 +160,36 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
 
     let program = signature.fn_name;
     let args = arguments.iter().map(|a| a.to_string()).collect();
-    Value::Proc(spawn(program, args))
+    Ok(Value::Proc(spawn(program, args)?))
 }
 
-fn spawn(program: String, args: Vec<String>) -> Proc {
+fn spawn(program: String, args: Vec<String>) -> Result<Proc> {
     let mut command = std::process::Command::new(program.clone());
     command.args(args.clone());
 
-    let (stdin_reader, stdin_writer) = os_pipe::pipe().unwrap();
+    let (stdin_reader, stdin_writer) = os_pipe::pipe()
+        .map_err(|e| ShadyError::ProcessError(e))?;
     command.stdin(stdin_reader);
-    let (stdout_reader, stdout_writer) = os_pipe::pipe().unwrap();
+    let (stdout_reader, stdout_writer) = os_pipe::pipe()
+        .map_err(|e| ShadyError::ProcessError(e))?;
     command.stdout(stdout_writer);
-    let (stderr_reader, stderr_writer) = os_pipe::pipe().unwrap();
+    let (stderr_reader, stderr_writer) = os_pipe::pipe()
+        .map_err(|e| ShadyError::ProcessError(e))?;
     command.stderr(stderr_writer);
 
-    let child = command.spawn().unwrap();
+    let child = command.spawn()?;
 
-    Proc {
+    Ok(Proc {
         child: Rc::new(RefCell::new(child)),
         program,
         args,
         stdin_writer,
         stdout_reader,
         stderr_reader,
-    }
+    })
 }
 
-pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value]) -> Value {
+pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value]) -> Result<Value> {
     let vars: HashMap<String, Value> = fun
         .signature
         .parameters
@@ -205,7 +218,7 @@ mod tests {
         let program = parse_script(script);
         let context = build_context("test.shady".to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").expect("main function not found");
-        eval_local_fn(&context, fun, &[])
+        eval_local_fn(&context, fun, &[]).expect("evaluation failed")
     }
 
     macro_rules! eval_tests {

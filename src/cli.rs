@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::ast;
+use crate::error::Result;
 use crate::eval;
 use crate::eval::ShadyContext;
 use crate::types::{from_string, Type};
@@ -51,7 +52,7 @@ fn get_command(context: &ShadyContext) -> clap::Command {
     cmd
 }
 
-pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) {
+pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
     let cmd = get_command(context);
     let matches = cmd.get_matches_from(script_args);
 
@@ -67,11 +68,13 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) {
                 .unwrap_or_else(|| panic!("missing argument {}", param.name))
                 .for_each(|raw_cli_value| {
                     let cli_value: String = raw_cli_value.to_string_lossy().into_owned();
-                    let value = from_string(&param.typ, &cli_value);
+                    let value = from_string(&param.typ, &cli_value)
+                        .expect("failed to parse CLI argument");
                     local_context.vars.insert(param.name.clone(), value);
                 });
         }
     }
 
-    eval::eval_expr(&local_context, context, &fun.expr);
+    eval::eval_expr(&local_context, context, &fun.expr)?;
+    Ok(())
 }

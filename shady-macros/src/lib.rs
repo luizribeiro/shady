@@ -88,7 +88,7 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
                 });
 
                 args_prog.extend(quote! {
-                    let #ident = crate::types::from_value::<#ty>(args[#i].clone());
+                    let #ident = crate::types::from_value::<#ty>(args[#i].clone())?;
                 });
 
                 call_prog.extend(quote! { #ident, });
@@ -127,10 +127,10 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
             };
             builtins.insert(
                 signature,
-                Box::new(move |args| {
+                Box::new(move |args| -> crate::error::Result<crate::types::Value> {
                     #args_prog
                     let r = fun(#call_prog);
-                    crate::types::to_value(r)
+                    Ok(crate::types::to_value(r))
                 }),
             );
         }

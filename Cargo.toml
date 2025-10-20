@@ -11,6 +11,7 @@ pest = "2.5.3"
 pest_derive = "2.5.3"
 shady-macros = { path = "shady-macros" }
 snailquote = "0.3.1"
+thiserror = "1.0"
 
 [dev-dependencies]
 assert_cmd = "2.0.8"

@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+use crate::error::{Result, ShadyError};
 
 #[derive(Debug, Clone, Eq)]
 pub enum Type {
@@ -75,9 +76,12 @@ impl Clone for Proc {
             child: self.child.clone(),
             program: self.program.clone(),
             args: self.args.clone(),
-            stdin_writer: self.stdin_writer.try_clone().unwrap(),
-            stdout_reader: self.stdout_reader.try_clone().unwrap(),
-            stderr_reader: self.stderr_reader.try_clone().unwrap(),
+            stdin_writer: self.stdin_writer.try_clone()
+                .expect("Failed to clone stdin pipe - this is likely a system resource limit issue"),
+            stdout_reader: self.stdout_reader.try_clone()
+                .expect("Failed to clone stdout pipe - this is likely a system resource limit issue"),
+            stderr_reader: self.stderr_reader.try_clone()
+                .expect("Failed to clone stderr pipe - this is likely a system resource limit issue"),
         }
     }
 }
@@ -139,9 +143,9 @@ impl Display for Value {
     }
 }
 
-pub trait PrimitiveValue {
+pub trait PrimitiveValue: Sized {
     fn value_type() -> Type;
-    fn from_value(value: Value) -> Self;
+    fn from_value(value: Value) -> Result<Self>;
     fn to_value(&self) -> Value;
 }
 
@@ -150,10 +154,13 @@ impl PrimitiveValue for i64 {
         Type::Int
     }
 
-    fn from_value(value: Value) -> Self {
+    fn from_value(value: Value) -> Result<Self> {
         match value {
-            Value::Int(i) => i,
-            _ => panic!("Expected int value"),
+            Value::Int(i) => Ok(i),
+            _ => Err(ShadyError::TypeMismatch {
+                expected: "int".to_string(),
+                actual: format!("{:?}", value.get_type()),
+            }),
         }
     }
 
@@ -167,10 +174,13 @@ impl PrimitiveValue for String {
         Type::Str
     }
 
-    fn from_value(value: Value) -> Self {
+    fn from_value(value: Value) -> Result<Self> {
         match value {
-            Value::Str(s) => s,
-            _ => panic!("Expected string value, got {:?}", value),
+            Value::Str(s) => Ok(s),
+            _ => Err(ShadyError::TypeMismatch {
+                expected: "str".to_string(),
+                actual: format!("{:?}", value.get_type()),
+            }),
         }
     }
 
@@ -184,10 +194,13 @@ impl PrimitiveValue for bool {
         Type::Bool
     }
 
-    fn from_value(value: Value) -> Self {
+    fn from_value(value: Value) -> Result<Self> {
         match value {
-            Value::Bool(b) => b,
-            _ => panic!("Expected bool value"),
+            Value::Bool(b) => Ok(b),
+            _ => Err(ShadyError::TypeMismatch {
+                expected: "bool".to_string(),
+                actual: format!("{:?}", value.get_type()),
+            }),
         }
     }
 
@@ -201,13 +214,23 @@ impl<T: PrimitiveValue> PrimitiveValue for Vec<T> {
         Type::List(Box::new(T::value_type()))
     }
 
-    fn from_value(value: Value) -> Self {
+    fn from_value(value: Value) -> Result<Self> {
         match value {
             Value::List { inner_type, values } => {
-                assert_eq!(inner_type, T::value_type());
-                values.into_iter().map(T::from_value).collect()
+                if inner_type != T::value_type() {
+                    return Err(ShadyError::TypeMismatch {
+                        expected: format!("[{}]", T::value_type()),
+                        actual: format!("[{:?}]", inner_type),
+                    });
+                }
+                values.into_iter()
+                    .map(T::from_value)
+                    .collect::<Result<Vec<T>>>()
             }
-            _ => panic!("Expected list value"),
+            _ => Err(ShadyError::TypeMismatch {
+                expected: "list".to_string(),
+                actual: format!("{:?}", value.get_type()),
+            }),
         }
     }
 
@@ -224,10 +247,13 @@ impl PrimitiveValue for Proc {
         Type::Proc
     }
 
-    fn from_value(value: Value) -> Self {
+    fn from_value(value: Value) -> Result<Self> {
         match value {
-            Value::Proc(p) => p,
-            _ => panic!("Expected proc value"),
+            Value::Proc(p) => Ok(p),
+            _ => Err(ShadyError::TypeMismatch {
+                expected: "proc".to_string(),
+                actual: format!("{:?}", value.get_type()),
+            }),
         }
     }
 
@@ -241,8 +267,8 @@ impl PrimitiveValue for Value {
         Type::Any
     }
 
-    fn from_value(value: Value) -> Self {
-        value
+    fn from_value(value: Value) -> Result<Self> {
+        Ok(value)
     }
 
     fn to_value(&self) -> Value {
@@ -254,7 +280,7 @@ pub fn value_type<T: PrimitiveValue>() -> Type {
     <T>::value_type()
 }
 
-pub fn from_value<T: PrimitiveValue>(value: Value) -> T {
+pub fn from_value<T: PrimitiveValue>(value: Value) -> Result<T> {
     <T>::from_value(value)
 }
 
@@ -262,13 +288,36 @@ pub fn to_value<T: PrimitiveValue>(value: T) -> Value {
     <T>::to_value(&value)
 }
 
-pub fn from_string(typ: &Type, s: &str) -> Value {
+pub fn from_string(typ: &Type, s: &str) -> Result<Value> {
     match typ {
-        Type::Int => Value::Int(s.parse().expect("Expected int")),
-        Type::Str => Value::Str(s.to_string()),
-        Type::Bool => Value::Bool(s.parse().expect("Expected bool")),
-        Type::List(_) => panic!("Cannot convert string to list"),
-        Type::Proc => panic!("Cannot convert string to proc"),
-        Type::Any => unreachable!("Unexpected conversion from string to Any"),
+        Type::Int => {
+            s.parse::<i64>()
+                .map(Value::Int)
+                .map_err(|_| ShadyError::InvalidConversion {
+                    from: format!("string '{}'", s),
+                    to: "int".to_string(),
+                })
+        }
+        Type::Str => Ok(Value::Str(s.to_string())),
+        Type::Bool => {
+            s.parse::<bool>()
+                .map(Value::Bool)
+                .map_err(|_| ShadyError::InvalidConversion {
+                    from: format!("string '{}'", s),
+                    to: "bool".to_string(),
+                })
+        }
+        Type::List(_) => Err(ShadyError::InvalidConversion {
+            from: "string".to_string(),
+            to: "list".to_string(),
+        }),
+        Type::Proc => Err(ShadyError::InvalidConversion {
+            from: "string".to_string(),
+            to: "proc".to_string(),
+        }),
+        Type::Any => Err(ShadyError::InvalidConversion {
+            from: "string".to_string(),
+            to: "any".to_string(),
+        }),
     }
 }
