@@ -67,17 +67,19 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
     };
     let subcmd_name = matches.subcommand_name().unwrap_or("main");
     let fun = ast::get_fn_by_name(&context.program, subcmd_name)
-        .unwrap_or_else(|| panic!("function {subcmd_name} not found"));
+        .ok_or_else(|| crate::error::ShadyError::FunctionNotFound {
+            name: subcmd_name.to_string()
+        })?;
     if let Some(args) = matches.subcommand_matches(subcmd_name) {
         for param in &fun.signature.parameters {
-            args.get_raw(&param.name)
-                .unwrap_or_else(|| panic!("missing argument {}", param.name))
-                .for_each(|raw_cli_value| {
-                    let cli_value: String = raw_cli_value.to_string_lossy().into_owned();
-                    let value = from_string(&param.typ, &cli_value)
-                        .expect("failed to parse CLI argument");
-                    local_context.vars.insert(param.name.clone(), value);
-                });
+            let raw_values = args.get_raw(&param.name)
+                .ok_or_else(|| crate::error::ShadyError::MissingCliArgument(param.name.clone()))?;
+
+            for raw_cli_value in raw_values {
+                let cli_value: String = raw_cli_value.to_string_lossy().into_owned();
+                let value = from_string(&param.typ, &cli_value)?;
+                local_context.vars.insert(param.name.clone(), value);
+            }
         }
     }
 

@@ -127,28 +127,6 @@ pub fn eval_expr_with_type(
     }
 }
 
-fn build_signature(call: &Expr, types: Vec<Type>) -> FnSignature {
-    match call {
-        Expr::Call {
-            fn_name, is_infix, ..
-        } => FnSignature {
-            fn_name: fn_name.to_string(),
-            parameters: types
-                .iter()
-                .map(|t| Parameter {
-                    name: "".to_string(),
-                    typ: t.clone(),
-                    spec: ParamSpec::default(),
-                })
-                .collect(),
-            is_public: true,
-            is_infix: *is_infix,
-            return_type: Type::Any,
-        },
-        _ => panic!("not a call"),
-    }
-}
-
 fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Result<Value> {
     let (fn_name, arg_exprs, is_infix) = match expr {
         Expr::Call { fn_name, arguments, is_infix } => (fn_name, arguments, *is_infix),
@@ -529,6 +507,85 @@ mod tests {
                     values: vec![],
                 }],
             },
+        );
+    }
+
+    // Error case tests
+    #[test]
+    fn eval_undefined_variable_fails() {
+        let program = parse_script("main = $foo;").unwrap();
+        let context = build_context("test.shady".to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let result = eval_local_fn(&context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::VariableNotFound(name) => assert_eq!(name, "foo"),
+            e => panic!("Expected VariableNotFound error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_type_mismatch_in_if_condition_fails() {
+        let program = parse_script("main = if (42) 1 else 2;").unwrap();
+        let context = build_context("test.shady".to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let result = eval_local_fn(&context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::TypeMismatch { expected, actual } => {
+                assert_eq!(expected, "bool");
+                assert!(actual.contains("int") || actual.contains("Int"));
+            }
+            e => panic!("Expected TypeMismatch error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_mixed_types_in_list_fails() {
+        let program = parse_script(
+            r"#
+                main = mixed_list;
+                mixed_list = [1; true];
+            #"
+        ).unwrap();
+        let context = build_context("test.shady".to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let result = eval_local_fn(&context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::TypeMismatch { .. } => {}, // Expected
+            e => panic!("Expected TypeMismatch error for mixed list types, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_builtin_signature_mismatch_gives_helpful_error() {
+        // Test that calling a builtin with wrong types gives helpful error
+        let program = parse_script("main = 1 + true;").unwrap();
+        let context = build_context("test.shady".to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let result = eval_local_fn(&context, fun, &[]);
+
+        assert!(result.is_err());
+        // The + operator exists for (int, int) but we're passing (int, bool)
+        match result.unwrap_err() {
+            ShadyError::FunctionSignatureMismatch { name, arg_types } => {
+                assert_eq!(name, "+");
+                assert!(arg_types.contains("did you mean one of these?"));
+            }
+            e => panic!("Expected FunctionSignatureMismatch error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_deeply_nested_expressions() {
+        // Test that deeply nested expressions work correctly
+        assert_eq!(
+            eval_script("main = (((((1 + 2) * 3) - 4) / 5) ^ 2);"),
+            Value::Int(1), // ((((3) * 3) - 4) / 5) ^ 2 = ((9 - 4) / 5) ^ 2 = (5 / 5) ^ 2 = 1 ^ 2 = 1
         );
     }
 }
