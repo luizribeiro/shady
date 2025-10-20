@@ -82,6 +82,20 @@ fn signature_matches(definition: &FnSignature, call: &FnSignature) -> bool {
     true
 }
 
+/// Find the index of the first argument that has a type mismatch
+/// Returns None if signatures match or if the issue is argument count
+fn find_mismatched_arg_index(definition: &FnSignature, call: &FnSignature) -> Option<usize> {
+    // Check that types match for all provided arguments
+    for (i, provided_param) in call.parameters.iter().enumerate() {
+        if let Some(expected_param) = definition.parameters.get(i) {
+            if provided_param.typ != expected_param.typ {
+                return Some(i);
+            }
+        }
+    }
+    None
+}
+
 pub struct ShadyContext {
     pub filename: String,
     // Source code is stored for potential future use in error reporting
@@ -262,6 +276,13 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
     }
 
     if let Some(fns) = get_builtins_by_name(context, &signature.fn_name) {
+        // Try to find which argument has the wrong type
+        let error_span = fns.iter()
+            .find_map(|f| find_mismatched_arg_index(f, &signature))
+            .and_then(|i| arg_exprs.get(i))
+            .map(|expr| expr.span().to_source_span())
+            .unwrap_or_else(|| call_span.to_source_span());
+
         return Err(ShadyError::FunctionSignatureMismatch {
             name: signature.fn_name.clone(),
             arg_types: format!(
@@ -271,17 +292,23 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
                     .collect::<Vec<String>>()
                     .join("\n")
             ),
-            span: call_span.to_source_span(),
+            span: error_span,
         });
     }
 
     if let Some(fun) = get_fn_by_name(&context.program, &signature.fn_name) {
         // Validate that the call signature matches the function definition
         if !signature_matches(&fun.signature, &signature) {
+            // Try to find which argument has the wrong type
+            let error_span = find_mismatched_arg_index(&fun.signature, &signature)
+                .and_then(|i| arg_exprs.get(i))
+                .map(|expr| expr.span().to_source_span())
+                .unwrap_or_else(|| call_span.to_source_span());
+
             return Err(ShadyError::FunctionSignatureMismatch {
                 name: signature.fn_name.clone(),
                 arg_types: format!("expected signature: {}", fun.signature),
-                span: call_span.to_source_span(),
+                span: error_span,
             });
         }
         return eval_local_fn(local_context, context, fun, &arguments);
@@ -875,5 +902,90 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Value::Int(0));
+    }
+
+    // Tests for improved error span reporting (Priority 2)
+    #[test]
+    fn eval_builtin_type_error_points_to_wrong_argument() {
+        // Test that builtin type errors point to the specific wrong argument
+        let script = "main = 1 + true;";
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::FunctionSignatureMismatch { name, span, .. } => {
+                assert_eq!(name, "+");
+                // The span should point to 'true' (offset 11, length 4)
+                // "main = 1 + true;"
+                //  0123456789012345
+                //            ^^^^
+                assert_eq!(span.offset(), 11);
+                assert_eq!(span.len(), 4);
+            }
+            e => panic!("Expected FunctionSignatureMismatch error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_user_function_type_error_points_to_wrong_argument() {
+        // Test that user function type errors point to the specific wrong argument
+        let script = r#"
+                main = takes_ints 42 "hello";
+                takes_ints $a: int $b: int = $a + $b;
+            "#;
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::FunctionSignatureMismatch { name, span, .. } => {
+                assert_eq!(name, "takes_ints");
+                // The span should point to "hello", not the entire call
+                // Verify offset is after "42 " and length is for "hello" (7 chars including quotes)
+                assert_eq!(span.len(), 7); // length of "hello"
+            }
+            e => panic!("Expected FunctionSignatureMismatch error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_first_wrong_argument_is_identified() {
+        // Test that when multiple arguments are wrong, we report the first one
+        let script = r#"
+                main = takes_ints "wrong" true;
+                takes_ints $a: int $b: int = $a + $b;
+            "#;
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::FunctionSignatureMismatch { name, span, .. } => {
+                assert_eq!(name, "takes_ints");
+                // The span should point to "wrong" (first wrong arg), not "true"
+                // Length should be 7 for "wrong"
+                assert_eq!(span.len(), 7);
+            }
+            e => panic!("Expected FunctionSignatureMismatch error, got {:?}", e),
+        }
     }
 }
