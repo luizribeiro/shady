@@ -129,6 +129,7 @@ pub fn build_context_with_limits(
     program: ProgramAST,
     limits: ResourceLimits,
 ) -> ShadyContext {
+    #[allow(clippy::mutable_key_type)]
     let mut builtins: BuiltinIndex = HashMap::new();
 
     builtins::setup_builtins(&mut builtins);

@@ -205,6 +205,7 @@ pub fn setup_builtins(_item: TokenStream) -> TokenStream {
         .reduce(|a, b| quote! { #a #b })
         .expect("failed to generate setup_builtins");
     quote! {
+        #[allow(clippy::mutable_key_type)]
         pub fn setup_builtins(builtins: &mut BuiltinIndex) {
             #setup_prog
         }
