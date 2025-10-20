@@ -78,7 +78,7 @@ fn pipe_stdout_reversed(a: Proc, b: Proc) -> Result<Proc> {
     pipe_stdout(b, a)
 }
 
-fn redirect<'a, R, W>(mut a: R, mut b: W) -> thread::JoinHandle<()>
+fn redirect<R, W>(mut a: R, mut b: W) -> thread::JoinHandle<()>
 where
     R: Read + Send + 'static,
     W: Write + Send + 'static,
