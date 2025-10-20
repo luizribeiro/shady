@@ -86,6 +86,6 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
         depth: 0,
     };
 
-    eval::eval_expr(&local_context, context, &fun.expr)?;
+    eval::eval_expr_with_type(&local_context, context, &fun.expr, None)?;
     Ok(())
 }

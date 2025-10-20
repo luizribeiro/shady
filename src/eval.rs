@@ -118,10 +118,6 @@ pub fn build_context_with_limits(
     }
 }
 
-pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Result<Value> {
-    eval_expr_with_type(local_context, context, expr, None)
-}
-
 pub fn eval_expr_with_type(
     local_context: &LocalContext,
     context: &ShadyContext,
@@ -228,7 +224,7 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
         // No type information available, evaluate without expected types
         arg_exprs
             .iter()
-            .map(|arg| eval_expr(local_context, context, arg))
+            .map(|arg| eval_expr_with_type(local_context, context, arg, None))
             .collect::<Result<Vec<Value>>>()?
     };
 
