@@ -11,6 +11,22 @@ use crate::types::{Proc, Type, Value};
 
 pub type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Result<Value>>>;
 
+/// Resource limits for execution safety
+#[derive(Debug, Clone)]
+pub struct ResourceLimits {
+    pub max_recursion_depth: usize,
+    pub max_process_count: usize,
+}
+
+impl Default for ResourceLimits {
+    fn default() -> Self {
+        ResourceLimits {
+            max_recursion_depth: 1000,
+            max_process_count: 100,
+        }
+    }
+}
+
 fn get_builtin_fn<'a>(
     context: &'a ShadyContext,
     signature: &'a FnSignature,
@@ -70,6 +86,8 @@ pub struct ShadyContext {
     pub filename: String,
     pub program: ProgramAST,
     builtins: BuiltinIndex,
+    pub limits: ResourceLimits,
+    process_count: RefCell<usize>,
 }
 
 #[derive(Debug)]
@@ -78,6 +96,14 @@ pub struct LocalContext {
 }
 
 pub fn build_context(filename: String, program: ProgramAST) -> ShadyContext {
+    build_context_with_limits(filename, program, ResourceLimits::default())
+}
+
+pub fn build_context_with_limits(
+    filename: String,
+    program: ProgramAST,
+    limits: ResourceLimits,
+) -> ShadyContext {
     let mut builtins: BuiltinIndex = HashMap::new();
 
     builtins::setup_builtins(&mut builtins);
@@ -86,11 +112,13 @@ pub fn build_context(filename: String, program: ProgramAST) -> ShadyContext {
         filename,
         program,
         builtins,
+        limits,
+        process_count: RefCell::new(0),
     }
 }
 
 pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Result<Value> {
-    eval_expr_with_type(local_context, context, expr, None)
+    eval_expr_with_type_and_depth(local_context, context, expr, None, 0)
 }
 
 pub fn eval_expr_with_type(
@@ -99,6 +127,21 @@ pub fn eval_expr_with_type(
     expr: &Expr,
     expected_type: Option<&Type>,
 ) -> Result<Value> {
+    eval_expr_with_type_and_depth(local_context, context, expr, expected_type, 0)
+}
+
+fn eval_expr_with_type_and_depth(
+    local_context: &LocalContext,
+    context: &ShadyContext,
+    expr: &Expr,
+    expected_type: Option<&Type>,
+    depth: usize,
+) -> Result<Value> {
+    // Check recursion depth limit
+    if depth > context.limits.max_recursion_depth {
+        return Err(ShadyError::RecursionLimitExceeded(context.limits.max_recursion_depth));
+    }
+
     match expr {
         Expr::Value(value) => Ok(value.clone()),
         Expr::Variable(var_name) => {
@@ -106,16 +149,16 @@ pub fn eval_expr_with_type(
                 .cloned()
                 .ok_or_else(|| ShadyError::VariableNotFound(var_name.clone()))
         }
-        Expr::Call { .. } => eval_fn(local_context, context, expr),
+        Expr::Call { .. } => eval_fn_with_depth(local_context, context, expr, depth),
         Expr::If {
             condition,
             when_true,
             when_false,
         } => {
-            let cond_val = eval_expr_with_type(local_context, context, condition, Some(&Type::Bool))?;
+            let cond_val = eval_expr_with_type_and_depth(local_context, context, condition, Some(&Type::Bool), depth + 1)?;
             match cond_val {
-                Value::Bool(true) => eval_expr_with_type(local_context, context, when_true, expected_type),
-                Value::Bool(false) => eval_expr_with_type(local_context, context, when_false, expected_type),
+                Value::Bool(true) => eval_expr_with_type_and_depth(local_context, context, when_true, expected_type, depth + 1),
+                Value::Bool(false) => eval_expr_with_type_and_depth(local_context, context, when_false, expected_type, depth + 1),
                 _ => Err(ShadyError::TypeMismatch {
                     expected: "bool".to_string(),
                     actual: format!("{:?}", cond_val.get_type()),
@@ -131,7 +174,7 @@ pub fn eval_expr_with_type(
 
             let values: Vec<Value> = elements
                 .iter()
-                .map(|e| eval_expr_with_type(local_context, context, e, expected_inner_type))
+                .map(|e| eval_expr_with_type_and_depth(local_context, context, e, expected_inner_type, depth + 1))
                 .collect::<Result<Vec<Value>>>()?;
 
             let inner_type = match values.len() {
@@ -156,6 +199,10 @@ pub fn eval_expr_with_type(
 }
 
 fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Result<Value> {
+    eval_fn_with_depth(local_context, context, expr, 0)
+}
+
+fn eval_fn_with_depth(local_context: &LocalContext, context: &ShadyContext, expr: &Expr, depth: usize) -> Result<Value> {
     let (fn_name, arg_exprs, is_infix) = match expr {
         Expr::Call { fn_name, arguments, is_infix } => (fn_name, arguments, *is_infix),
         _ => return Err(ShadyError::EvalError("not a call".to_string())),
@@ -187,14 +234,14 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
             .enumerate()
             .map(|(i, arg)| {
                 let expected = types.get(i);
-                eval_expr_with_type(local_context, context, arg, expected)
+                eval_expr_with_type_and_depth(local_context, context, arg, expected, depth + 1)
             })
             .collect::<Result<Vec<Value>>>()?
     } else {
         // No type information available, evaluate without expected types
         arg_exprs
             .iter()
-            .map(|arg| eval_expr(local_context, context, arg))
+            .map(|arg| eval_expr_with_type_and_depth(local_context, context, arg, None, depth + 1))
             .collect::<Result<Vec<Value>>>()?
     };
 
@@ -238,15 +285,23 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
                 arg_types: format!("expected signature: {}", fun.signature),
             });
         }
-        return eval_local_fn(context, fun, &arguments);
+        return eval_local_fn_with_depth(context, fun, &arguments, depth + 1);
     }
 
     let program = signature.fn_name;
     let args = arguments.iter().map(|a| a.to_string()).collect();
-    Ok(Value::Proc(spawn(program, args)?))
+    Ok(Value::Proc(spawn(context, program, args)?))
 }
 
-fn spawn(program: String, args: Vec<String>) -> Result<Proc> {
+fn spawn(context: &ShadyContext, program: String, args: Vec<String>) -> Result<Proc> {
+    // Check process limit
+    let mut count = context.process_count.borrow_mut();
+    if *count >= context.limits.max_process_count {
+        return Err(ShadyError::ProcessLimitExceeded(context.limits.max_process_count));
+    }
+    *count += 1;
+    drop(count); // Release the borrow
+
     let mut command = std::process::Command::new(program.clone());
     command.args(args.clone());
 
@@ -273,6 +328,10 @@ fn spawn(program: String, args: Vec<String>) -> Result<Proc> {
 }
 
 pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value]) -> Result<Value> {
+    eval_local_fn_with_depth(context, fun, args, 0)
+}
+
+fn eval_local_fn_with_depth(context: &ShadyContext, fun: &FnDefinition, args: &[Value], depth: usize) -> Result<Value> {
     let vars: HashMap<String, Value> = fun
         .signature
         .parameters
@@ -295,7 +354,7 @@ pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value])
         t => Some(t),
     };
 
-    eval_expr_with_type(&local_context, context, &fun.expr, expected_type)
+    eval_expr_with_type_and_depth(&local_context, context, &fun.expr, expected_type, depth)
 }
 
 #[cfg(test)]
@@ -683,5 +742,89 @@ mod tests {
             ),
             Value::Int(15),
         );
+    }
+
+    // Resource limit tests
+    #[test]
+    fn eval_recursion_limit_exceeded() {
+        // Test that recursion depth limit is enforced
+        let program = parse_script(
+            r"#
+                public main = infinite 0;
+                infinite $x: int = infinite ($x + 1);
+            #"
+        ).unwrap();
+
+        // Set a low recursion limit for testing
+        let limits = ResourceLimits {
+            max_recursion_depth: 10,
+            max_process_count: 100,
+        };
+        let context = build_context_with_limits("test.shady".to_string(), program, limits);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let result = eval_local_fn(&context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::RecursionLimitExceeded(limit) => {
+                assert_eq!(limit, 10);
+            }
+            e => panic!("Expected RecursionLimitExceeded error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_process_limit_exceeded() {
+        // Test that process count limit is enforced
+        let program = parse_script(
+            r"#
+                public main = spawn_many 0;
+                spawn_many $x: int = if ($x < 20)
+                    (spawn_many ($x + 1)) + (exec (echo test))
+                    else 0;
+            #"
+        ).unwrap();
+
+        // Set a low process limit for testing
+        let limits = ResourceLimits {
+            max_recursion_depth: 1000,
+            max_process_count: 5,
+        };
+        let context = build_context_with_limits("test.shady".to_string(), program, limits);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let result = eval_local_fn(&context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::ProcessLimitExceeded(limit) => {
+                assert_eq!(limit, 5);
+            }
+            e => panic!("Expected ProcessLimitExceeded error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_recursion_within_limit_works() {
+        // Test that recursion within the limit works fine
+        let program = parse_script(
+            r"#
+                public main = countdown 3;
+                countdown $x: int = if ($x > 0) countdown ($x - 1) else 0;
+            #"
+        ).unwrap();
+
+        // Set a limit that should be sufficient for countdown(3)
+        // Need enough for: main call + countdown(3) + countdown(2) + countdown(1) + countdown(0)
+        // Plus each if/else adds depth
+        let limits = ResourceLimits {
+            max_recursion_depth: 50,
+            max_process_count: 100,
+        };
+        let context = build_context_with_limits("test.shady".to_string(), program, limits);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let result = eval_local_fn(&context, fun, &[]);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Int(0));
     }
 }
