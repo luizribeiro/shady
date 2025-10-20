@@ -93,6 +93,7 @@ pub struct ShadyContext {
 #[derive(Debug)]
 pub struct LocalContext {
     pub vars: HashMap<String, Value>,
+    pub depth: usize,
 }
 
 pub fn build_context(filename: String, program: ProgramAST) -> ShadyContext {
@@ -118,7 +119,7 @@ pub fn build_context_with_limits(
 }
 
 pub fn eval_expr(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Result<Value> {
-    eval_expr_with_type_and_depth(local_context, context, expr, None, 0)
+    eval_expr_with_type(local_context, context, expr, None)
 }
 
 pub fn eval_expr_with_type(
@@ -127,18 +128,8 @@ pub fn eval_expr_with_type(
     expr: &Expr,
     expected_type: Option<&Type>,
 ) -> Result<Value> {
-    eval_expr_with_type_and_depth(local_context, context, expr, expected_type, 0)
-}
-
-fn eval_expr_with_type_and_depth(
-    local_context: &LocalContext,
-    context: &ShadyContext,
-    expr: &Expr,
-    expected_type: Option<&Type>,
-    depth: usize,
-) -> Result<Value> {
     // Check recursion depth limit
-    if depth > context.limits.max_recursion_depth {
+    if local_context.depth > context.limits.max_recursion_depth {
         return Err(ShadyError::RecursionLimitExceeded(context.limits.max_recursion_depth));
     }
 
@@ -149,16 +140,16 @@ fn eval_expr_with_type_and_depth(
                 .cloned()
                 .ok_or_else(|| ShadyError::VariableNotFound(var_name.clone()))
         }
-        Expr::Call { .. } => eval_fn_with_depth(local_context, context, expr, depth),
+        Expr::Call { .. } => eval_fn(local_context, context, expr),
         Expr::If {
             condition,
             when_true,
             when_false,
         } => {
-            let cond_val = eval_expr_with_type_and_depth(local_context, context, condition, Some(&Type::Bool), depth + 1)?;
+            let cond_val = eval_expr_with_type(local_context, context, condition, Some(&Type::Bool))?;
             match cond_val {
-                Value::Bool(true) => eval_expr_with_type_and_depth(local_context, context, when_true, expected_type, depth + 1),
-                Value::Bool(false) => eval_expr_with_type_and_depth(local_context, context, when_false, expected_type, depth + 1),
+                Value::Bool(true) => eval_expr_with_type(local_context, context, when_true, expected_type),
+                Value::Bool(false) => eval_expr_with_type(local_context, context, when_false, expected_type),
                 _ => Err(ShadyError::TypeMismatch {
                     expected: "bool".to_string(),
                     actual: format!("{:?}", cond_val.get_type()),
@@ -174,7 +165,7 @@ fn eval_expr_with_type_and_depth(
 
             let values: Vec<Value> = elements
                 .iter()
-                .map(|e| eval_expr_with_type_and_depth(local_context, context, e, expected_inner_type, depth + 1))
+                .map(|e| eval_expr_with_type(local_context, context, e, expected_inner_type))
                 .collect::<Result<Vec<Value>>>()?;
 
             let inner_type = match values.len() {
@@ -199,10 +190,6 @@ fn eval_expr_with_type_and_depth(
 }
 
 fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) -> Result<Value> {
-    eval_fn_with_depth(local_context, context, expr, 0)
-}
-
-fn eval_fn_with_depth(local_context: &LocalContext, context: &ShadyContext, expr: &Expr, depth: usize) -> Result<Value> {
     let (fn_name, arg_exprs, is_infix) = match expr {
         Expr::Call { fn_name, arguments, is_infix } => (fn_name, arguments, *is_infix),
         _ => return Err(ShadyError::EvalError("not a call".to_string())),
@@ -234,14 +221,14 @@ fn eval_fn_with_depth(local_context: &LocalContext, context: &ShadyContext, expr
             .enumerate()
             .map(|(i, arg)| {
                 let expected = types.get(i);
-                eval_expr_with_type_and_depth(local_context, context, arg, expected, depth + 1)
+                eval_expr_with_type(local_context, context, arg, expected)
             })
             .collect::<Result<Vec<Value>>>()?
     } else {
         // No type information available, evaluate without expected types
         arg_exprs
             .iter()
-            .map(|arg| eval_expr_with_type_and_depth(local_context, context, arg, None, depth + 1))
+            .map(|arg| eval_expr(local_context, context, arg))
             .collect::<Result<Vec<Value>>>()?
     };
 
@@ -285,7 +272,7 @@ fn eval_fn_with_depth(local_context: &LocalContext, context: &ShadyContext, expr
                 arg_types: format!("expected signature: {}", fun.signature),
             });
         }
-        return eval_local_fn_with_depth(context, fun, &arguments, depth + 1);
+        return eval_local_fn(local_context, context, fun, &arguments);
     }
 
     let program = signature.fn_name;
@@ -327,11 +314,12 @@ fn spawn(context: &ShadyContext, program: String, args: Vec<String>) -> Result<P
     })
 }
 
-pub fn eval_local_fn(context: &ShadyContext, fun: &FnDefinition, args: &[Value]) -> Result<Value> {
-    eval_local_fn_with_depth(context, fun, args, 0)
-}
-
-fn eval_local_fn_with_depth(context: &ShadyContext, fun: &FnDefinition, args: &[Value], depth: usize) -> Result<Value> {
+pub fn eval_local_fn(
+    parent_context: &LocalContext,
+    context: &ShadyContext,
+    fun: &FnDefinition,
+    args: &[Value],
+) -> Result<Value> {
     let vars: HashMap<String, Value> = fun
         .signature
         .parameters
@@ -346,7 +334,11 @@ fn eval_local_fn_with_depth(context: &ShadyContext, fun: &FnDefinition, args: &[
             )
         })
         .collect();
-    let local_context = LocalContext { vars };
+
+    let local_context = LocalContext {
+        vars,
+        depth: parent_context.depth + 1,
+    };
 
     // Use return type as expected type if it's not Type::Any
     let expected_type = match &fun.signature.return_type {
@@ -354,7 +346,7 @@ fn eval_local_fn_with_depth(context: &ShadyContext, fun: &FnDefinition, args: &[
         t => Some(t),
     };
 
-    eval_expr_with_type_and_depth(&local_context, context, &fun.expr, expected_type, depth)
+    eval_expr_with_type(&local_context, context, &fun.expr, expected_type)
 }
 
 #[cfg(test)]
@@ -367,7 +359,11 @@ mod tests {
         let program = parse_script(script).expect("parse failed");
         let context = build_context("test.shady".to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").expect("main function not found");
-        eval_local_fn(&context, fun, &[]).expect("evaluation failed")
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        eval_local_fn(&local_context, &context, fun, &[]).expect("evaluation failed")
     }
 
     macro_rules! eval_tests {
@@ -575,7 +571,11 @@ mod tests {
         let program = parse_script("main = [];").unwrap();
         let context = build_context("test.shady".to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
-        let result = eval_local_fn(&context, fun, &[]);
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -610,7 +610,11 @@ mod tests {
         let program = parse_script("main = $foo;").unwrap();
         let context = build_context("test.shady".to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
-        let result = eval_local_fn(&context, fun, &[]);
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -624,7 +628,11 @@ mod tests {
         let program = parse_script("main = if (42) 1 else 2;").unwrap();
         let context = build_context("test.shady".to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
-        let result = eval_local_fn(&context, fun, &[]);
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -646,7 +654,11 @@ mod tests {
         ).unwrap();
         let context = build_context("test.shady".to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
-        let result = eval_local_fn(&context, fun, &[]);
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -661,7 +673,11 @@ mod tests {
         let program = parse_script("main = 1 + true;").unwrap();
         let context = build_context("test.shady".to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
-        let result = eval_local_fn(&context, fun, &[]);
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
 
         assert!(result.is_err());
         // The + operator exists for (int, int) but we're passing (int, bool)
@@ -694,7 +710,11 @@ mod tests {
         ).unwrap();
         let context = build_context("test.shady".to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
-        let result = eval_local_fn(&context, fun, &[]);
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
 
         assert!(result.is_err());
         // The function expects (int, int) but we're calling with (int, bool)
@@ -719,7 +739,11 @@ mod tests {
         ).unwrap();
         let context = build_context("test.shady".to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
-        let result = eval_local_fn(&context, fun, &[]);
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -762,7 +786,11 @@ mod tests {
         };
         let context = build_context_with_limits("test.shady".to_string(), program, limits);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
-        let result = eval_local_fn(&context, fun, &[]);
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -792,7 +820,11 @@ mod tests {
         };
         let context = build_context_with_limits("test.shady".to_string(), program, limits);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
-        let result = eval_local_fn(&context, fun, &[]);
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -822,7 +854,11 @@ mod tests {
         };
         let context = build_context_with_limits("test.shady".to_string(), program, limits);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
-        let result = eval_local_fn(&context, fun, &[]);
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Value::Int(0));

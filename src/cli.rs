@@ -62,9 +62,7 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
     let cmd = get_command(context);
     let matches = cmd.get_matches_from(script_args);
 
-    let mut local_context = eval::LocalContext {
-        vars: HashMap::new(),
-    };
+    let mut vars = HashMap::new();
     let subcmd_name = matches.subcommand_name().unwrap_or("main");
     let fun = ast::get_fn_by_name(&context.program, subcmd_name)
         .ok_or_else(|| crate::error::ShadyError::FunctionNotFound {
@@ -78,10 +76,15 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
             for raw_cli_value in raw_values {
                 let cli_value: String = raw_cli_value.to_string_lossy().into_owned();
                 let value = from_string(&param.typ, &cli_value)?;
-                local_context.vars.insert(param.name.clone(), value);
+                vars.insert(param.name.clone(), value);
             }
         }
     }
+
+    let local_context = eval::LocalContext {
+        vars,
+        depth: 0,
+    };
 
     eval::eval_expr(&local_context, context, &fun.expr)?;
     Ok(())
