@@ -30,9 +30,21 @@ fn main() {
         use std::io::Read;
         let mut buffer = String::new();
         std::io::stdin().read_to_string(&mut buffer).unwrap();
-        ast::parse_script(&buffer)
+        match ast::parse_script(&buffer) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Parse error: {}", e);
+                std::process::exit(1);
+            }
+        }
     } else {
-        ast::parse_file(&args.filename)
+        match ast::parse_file(&args.filename) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
     };
     if args.ast {
         println!("{program:#?}");

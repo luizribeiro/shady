@@ -1,3 +1,4 @@
+use crate::error::{Result, ShadyError};
 use crate::types::{Type, Value};
 use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
@@ -325,16 +326,24 @@ fn parse_program(pair: Pair<Rule>) -> ProgramAST {
     ProgramAST { fn_definitions }
 }
 
-pub fn parse_script(text: &str) -> ProgramAST {
-    let mut pairs = ShadyParser::parse(Rule::program, text).expect("parse error");
-    let pair = pairs.next().expect("no pairs returned by parser");
-    assert!(pair.as_rule() == Rule::program);
-    parse_program(pair)
+pub fn parse_script(text: &str) -> Result<ProgramAST> {
+    let mut pairs = ShadyParser::parse(Rule::program, text)
+        .map_err(|e| ShadyError::ParseErrorSimple(e.to_string()))?;
+    let pair = pairs.next()
+        .ok_or_else(|| ShadyError::ParseErrorSimple("no pairs returned by parser".to_string()))?;
+
+    if pair.as_rule() != Rule::program {
+        return Err(ShadyError::ParseErrorSimple(
+            format!("expected program rule, got {:?}", pair.as_rule())
+        ));
+    }
+
+    Ok(parse_program(pair))
 }
 
-pub fn parse_file(filename: &str) -> ProgramAST {
-    let unparsed_file =
-        fs::read_to_string(filename).unwrap_or_else(|_| panic!("file {filename} not found"));
+pub fn parse_file(filename: &str) -> Result<ProgramAST> {
+    let unparsed_file = fs::read_to_string(filename)
+        .map_err(|e| ShadyError::IoError(format!("failed to read file '{}': {}", filename, e)))?;
     parse_script(&unparsed_file)
 }
 
@@ -351,7 +360,7 @@ mod tests {
 
     #[test]
     fn parse_function_definition() {
-        let program = parse_script("ans = 42;");
+        let program = parse_script("ans = 42;").unwrap();
         assert_eq!(
             program.fn_definitions[0],
             FnDefinition {
@@ -370,7 +379,7 @@ mod tests {
     #[test]
     fn parse_function_signature() {
         assert_eq!(
-            parse_script("public ans -> int = 42;").fn_definitions[0].signature,
+            parse_script("public ans -> int = 42;").unwrap().fn_definitions[0].signature,
             FnSignature {
                 is_public: true,
                 is_infix: false,
@@ -380,7 +389,7 @@ mod tests {
             },
         );
         assert_eq!(
-            parse_script("ans = 42;").fn_definitions[0].signature,
+            parse_script("ans = 42;").unwrap().fn_definitions[0].signature,
             FnSignature {
                 is_public: false,
                 is_infix: false,
@@ -390,7 +399,7 @@ mod tests {
             },
         );
         assert_eq!(
-            parse_script("print $msg = echo $msg;").fn_definitions[0].signature,
+            parse_script("print $msg = echo $msg;").unwrap().fn_definitions[0].signature,
             FnSignature {
                 is_public: false,
                 is_infix: false,
@@ -404,7 +413,7 @@ mod tests {
             },
         );
         assert_eq!(
-            parse_script("add $a: int $b: int = $a + $b;").fn_definitions[0].signature,
+            parse_script("add $a: int $b: int = $a + $b;").unwrap().fn_definitions[0].signature,
             FnSignature {
                 is_public: false,
                 is_infix: false,
@@ -425,7 +434,7 @@ mod tests {
             },
         );
         assert_eq!(
-            parse_script("add $a: int $b: int (42) = $a + $b;").fn_definitions[0].signature,
+            parse_script("add $a: int $b: int (42) = $a + $b;").unwrap().fn_definitions[0].signature,
             FnSignature {
                 is_public: false,
                 is_infix: false,
@@ -449,7 +458,7 @@ mod tests {
             },
         );
         assert_eq!(
-            parse_script("get $a: int (42, option) = $a;").fn_definitions[0].signature,
+            parse_script("get $a: int (42, option) = $a;").unwrap().fn_definitions[0].signature,
             FnSignature {
                 is_public: false,
                 is_infix: false,
@@ -467,7 +476,7 @@ mod tests {
             },
         );
         assert_eq!(
-            parse_script("add $a: [int] $b: [[int]] -> [int] = [1; 2];").fn_definitions[0]
+            parse_script("add $a: [int] $b: [[int]] -> [int] = [1; 2];").unwrap().fn_definitions[0]
                 .signature,
             FnSignature {
                 is_public: false,
@@ -496,7 +505,7 @@ mod tests {
                 #[test]
                 fn $name() {
                     let (input, expected) = $value;
-                    let program = parse_script(input);
+                    let program = parse_script(input).unwrap();
                     let expr = &program.fn_definitions[0].expr;
                     assert_eq!(expr, &expected);
                 }

@@ -215,7 +215,7 @@ mod tests {
     use crate::types::Type;
 
     fn eval_script(script: &str) -> Value {
-        let program = parse_script(script);
+        let program = parse_script(script).expect("parse failed");
         let context = build_context("test.shady".to_string(), program);
         let fun = get_fn_by_name(&context.program, "main").expect("main function not found");
         eval_local_fn(&context, fun, &[]).expect("evaluation failed")
