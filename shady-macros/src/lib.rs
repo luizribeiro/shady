@@ -166,6 +166,7 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
     quote! {
         #orig_fun
 
+        #[allow(clippy::mutable_key_type)]
         pub fn #setup_ident(builtins: &mut crate::eval::BuiltinIndex) {
             let fun = #orig_fun_ident;
             let signature = crate::ast::FnSignature {
