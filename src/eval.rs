@@ -362,11 +362,9 @@ fn spawn(context: &ShadyContext, program: String, args: Vec<String>) -> Result<P
 
     let (stdin_reader, stdin_writer) = os_pipe::pipe().map_err(ShadyError::ProcessError)?;
     command.stdin(stdin_reader);
-    let (stdout_reader, stdout_writer) =
-        os_pipe::pipe().map_err(ShadyError::ProcessError)?;
+    let (stdout_reader, stdout_writer) = os_pipe::pipe().map_err(ShadyError::ProcessError)?;
     command.stdout(stdout_writer);
-    let (stderr_reader, stderr_writer) =
-        os_pipe::pipe().map_err(ShadyError::ProcessError)?;
+    let (stderr_reader, stderr_writer) = os_pipe::pipe().map_err(ShadyError::ProcessError)?;
     command.stderr(stderr_writer);
 
     let child = command.spawn()?;
