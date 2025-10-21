@@ -478,35 +478,6 @@ mod tests {
             Expr::Value(value, dummy_span())
         }
 
-        fn test_variable(name: &str) -> Self {
-            Expr::Variable(name.to_string(), dummy_span())
-        }
-
-        fn test_call(fn_name: &str, arguments: Vec<Expr>, is_infix: bool) -> Self {
-            Expr::Call {
-                fn_name: fn_name.to_string(),
-                arguments,
-                is_infix,
-                span: dummy_span(),
-            }
-        }
-
-        fn test_if(condition: Expr, when_true: Expr, when_false: Expr) -> Self {
-            Expr::If {
-                condition: Box::new(condition),
-                when_true: Box::new(when_true),
-                when_false: Box::new(when_false),
-                span: dummy_span(),
-            }
-        }
-
-        fn test_list(elements: Vec<Expr>) -> Self {
-            Expr::List {
-                elements,
-                span: dummy_span(),
-            }
-        }
-
         // Helper to compare Exprs ignoring spans
         fn eq_ignore_spans(&self, other: &Self) -> bool {
             match (self, other) {
