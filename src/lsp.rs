@@ -97,6 +97,11 @@ impl LanguageServer for Backend {
                     trigger_characters: Some(vec![" ".to_string(), "$".to_string()]),
                     ..Default::default()
                 }),
+                signature_help_provider: Some(SignatureHelpOptions {
+                    trigger_characters: Some(vec![" ".to_string(), "$".to_string()]),
+                    retrigger_characters: None,
+                    work_done_progress_options: WorkDoneProgressOptions::default(),
+                }),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -278,6 +283,59 @@ impl LanguageServer for Backend {
 
         Ok(Some(CompletionResponse::Array(completions)))
     }
+
+    async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
+        let uri = &params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        let docs = self.documents.read().await;
+        let doc = match docs.get(uri) {
+            Some(doc) => doc,
+            None => return Ok(None),
+        };
+
+        // Re-parse the document to get the AST
+        let ast = match parse_script(&doc.text) {
+            Ok(ast) => ast,
+            Err(_) => {
+                // Even if parsing fails, we can still provide builtin signatures
+                return Ok(None);
+            }
+        };
+
+        // Find the function call at the cursor position
+        let offset = position_to_offset(&doc.text, position);
+
+        // Get the line up to the cursor to find what function is being called
+        let line_text = doc.text.lines().nth(position.line as usize).unwrap_or("");
+        let line_up_to_cursor = &line_text[..position.character.min(line_text.len() as u32) as usize];
+
+        // Try to extract the function name before the cursor
+        if let Some(fn_name) = extract_function_name_at_cursor(line_up_to_cursor) {
+            // Look for user-defined function
+            for fn_def in &ast.fn_definitions {
+                if fn_def.signature.fn_name == fn_name {
+                    let signature_info = create_signature_info(&fn_def.signature);
+                    return Ok(Some(SignatureHelp {
+                        signatures: vec![signature_info],
+                        active_signature: Some(0),
+                        active_parameter: None,
+                    }));
+                }
+            }
+
+            // Look for builtin function
+            if let Some(signature_info) = get_builtin_signature(&fn_name) {
+                return Ok(Some(SignatureHelp {
+                    signatures: vec![signature_info],
+                    active_signature: Some(0),
+                    active_parameter: None,
+                }));
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 /// Convert a byte offset to LSP Position (line and character)
@@ -414,6 +472,114 @@ fn find_function_call_definition(
     }
 
     None
+}
+
+/// Extract the function name being called at the cursor position
+fn extract_function_name_at_cursor(line_up_to_cursor: &str) -> Option<String> {
+    // In Shady, function calls look like: "function_name $arg1 $arg2"
+    // We want to find the function name (first word after '=' if present, or first word on line)
+
+    let trimmed = line_up_to_cursor.trim();
+
+    // Find the position after '=' if present
+    let start_pos = if let Some(eq_pos) = trimmed.rfind('=') {
+        eq_pos + 1
+    } else {
+        0
+    };
+
+    let relevant_part = &trimmed[start_pos..].trim_start();
+
+    // Get the first word (the function name)
+    let words: Vec<&str> = relevant_part.split_whitespace().collect();
+
+    if let Some(first_word) = words.first() {
+        // Remove any leading/trailing non-identifier characters (like $ or parentheses)
+        let clean_word = first_word
+            .trim_start_matches(|c: char| !c.is_alphanumeric() && c != '_')
+            .trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_');
+        if !clean_word.is_empty() && clean_word.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return Some(clean_word.to_string());
+        }
+    }
+
+    None
+}
+
+/// Create signature information from a function signature
+fn create_signature_info(signature: &crate::ast::FnSignature) -> SignatureInformation {
+    let mut label = signature.fn_name.clone();
+    let mut parameters = Vec::new();
+
+    if !signature.parameters.is_empty() {
+        label.push(' ');
+        for (i, param) in signature.parameters.iter().enumerate() {
+            if i > 0 {
+                label.push(' ');
+            }
+            let param_label = format!("${}: {}", param.name, param.typ);
+            let start = label.len();
+            label.push_str(&param_label);
+            let end = label.len();
+
+            parameters.push(ParameterInformation {
+                label: ParameterLabel::LabelOffsets([start as u32, end as u32]),
+                documentation: None,
+            });
+        }
+    }
+
+    // Add return type if it's not Any (always outside the parameters block)
+    // Note: Can't use != because Type::Any == everything in the PartialEq impl
+    if !matches!(signature.return_type, crate::types::Type::Any) {
+        label.push_str(&format!(" -> {}", signature.return_type));
+    }
+
+    SignatureInformation {
+        label,
+        documentation: None,
+        parameters: if parameters.is_empty() { None } else { Some(parameters) },
+        active_parameter: None,
+    }
+}
+
+/// Get signature information for a builtin function
+fn get_builtin_signature(fn_name: &str) -> Option<SignatureInformation> {
+    let (label, params) = match fn_name {
+        "exec" => ("exec $proc: proc -> int", vec!["$proc: proc"]),
+        "seq" => ("seq $procs: [proc] -> int", vec!["$procs: [proc]"]),
+        "stdout" => ("stdout $proc: proc -> str", vec!["$proc: proc"]),
+        "print" => ("print $s: str -> int", vec!["$s: str"]),
+        "lines" => ("lines $input: str|proc -> [str]", vec!["$input: str|proc"]),
+        "to_string" => ("to_string $i: int -> str", vec!["$i: int"]),
+        "first" => ("first $list: [any] -> any", vec!["$list: [any]"]),
+        "add_all" => ("add_all $list: [int] -> int", vec!["$list: [int]"]),
+        "env" => ("env $var_name: str $default: str -> str", vec!["$var_name: str", "$default: str"]),
+        "os" => ("os -> str", vec![]),
+        "echo" => ("echo $msg: str -> proc", vec!["$msg: str"]),
+        "cat" => ("cat $file: str -> proc", vec!["$file: str"]),
+        _ => return None,
+    };
+
+    let mut parameters = Vec::new();
+    let mut current_pos = fn_name.len() + 1; // Account for function name and space
+
+    for param in params {
+        let start = current_pos;
+        let end = start + param.len();
+        parameters.push(ParameterInformation {
+            label: ParameterLabel::LabelOffsets([start as u32, end as u32]),
+            documentation: None,
+        });
+        current_pos = end + 1; // Account for space between parameters
+    }
+
+    Some(SignatureInformation {
+        label: label.to_string(),
+        documentation: None,
+        parameters: if parameters.is_empty() { None } else { Some(parameters) },
+        active_parameter: None,
+    })
 }
 
 /// Get completion items for builtin functions
@@ -1034,5 +1200,162 @@ with_return -> int = 100;
         assert!(with_params_detail.1.contains("with_params"));
         assert!(with_params_detail.1.contains("int"));
         assert!(with_params_detail.1.contains("str"));
+    }
+
+    // Tests for Signature Help functionality
+
+    #[test]
+    fn test_extract_function_name_at_cursor() {
+        // Simple function call
+        assert_eq!(extract_function_name_at_cursor("echo "), Some("echo".to_string()));
+        assert_eq!(extract_function_name_at_cursor("echo $"), Some("echo".to_string()));
+
+        // Function call in expression
+        assert_eq!(extract_function_name_at_cursor("public main = echo "), Some("echo".to_string()));
+        assert_eq!(extract_function_name_at_cursor("result = stdout "), Some("stdout".to_string()));
+
+        // Function with parameters already typed
+        assert_eq!(extract_function_name_at_cursor("env "), Some("env".to_string()));
+        assert_eq!(extract_function_name_at_cursor("env $var "), Some("env".to_string()));
+
+        // No function
+        assert_eq!(extract_function_name_at_cursor("   "), None);
+        assert_eq!(extract_function_name_at_cursor(""), None);
+    }
+
+    #[test]
+    fn test_get_builtin_signature() {
+        // Test exec signature
+        let sig = get_builtin_signature("exec").unwrap();
+        assert_eq!(sig.label, "exec $proc: proc -> int");
+        assert!(sig.parameters.is_some());
+        assert_eq!(sig.parameters.as_ref().unwrap().len(), 1);
+
+        // Test env signature (multiple parameters)
+        let sig = get_builtin_signature("env").unwrap();
+        assert_eq!(sig.label, "env $var_name: str $default: str -> str");
+        assert!(sig.parameters.is_some());
+        assert_eq!(sig.parameters.as_ref().unwrap().len(), 2);
+
+        // Test os signature (no parameters)
+        let sig = get_builtin_signature("os").unwrap();
+        assert_eq!(sig.label, "os -> str");
+        assert!(sig.parameters.is_none());
+
+        // Test non-existent function
+        assert!(get_builtin_signature("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_create_signature_info() {
+        use crate::ast::{FnSignature, Parameter, ParamSpec};
+        use crate::types::Type;
+
+        // Simple function with no parameters
+        let sig = FnSignature {
+            is_public: true,
+            is_infix: false,
+            fn_name: "simple".to_string(),
+            parameters: vec![],
+            return_type: Type::Int,
+        };
+        let info = create_signature_info(&sig);
+        assert_eq!(info.label, "simple -> int");
+        assert!(info.parameters.is_none()); // No parameters, so should be None
+
+        // Function with parameters
+        let sig = FnSignature {
+            is_public: false,
+            is_infix: false,
+            fn_name: "add".to_string(),
+            parameters: vec![
+                Parameter {
+                    name: "a".to_string(),
+                    typ: Type::Int,
+                    spec: ParamSpec::default(),
+                },
+                Parameter {
+                    name: "b".to_string(),
+                    typ: Type::Int,
+                    spec: ParamSpec::default(),
+                },
+            ],
+            return_type: Type::Int,
+        };
+        let info = create_signature_info(&sig);
+        assert!(info.label.contains("add"));
+        assert!(info.label.contains("$a: int"));
+        assert!(info.label.contains("$b: int"));
+        assert!(info.label.contains("-> int"));
+        assert_eq!(info.parameters.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_create_signature_info_parameter_offsets() {
+        use crate::ast::{FnSignature, Parameter, ParamSpec};
+        use crate::types::Type;
+
+        let sig = FnSignature {
+            is_public: false,
+            is_infix: false,
+            fn_name: "greet".to_string(),
+            parameters: vec![
+                Parameter {
+                    name: "name".to_string(),
+                    typ: Type::Str,
+                    spec: ParamSpec::default(),
+                },
+            ],
+            return_type: Type::Any,
+        };
+
+        let info = create_signature_info(&sig);
+        let params = info.parameters.unwrap();
+        assert_eq!(params.len(), 1);
+
+        // Check that parameter offset is correct
+        match &params[0].label {
+            ParameterLabel::LabelOffsets([start, end]) => {
+                let param_text = &info.label[*start as usize..*end as usize];
+                assert_eq!(param_text, "$name: str");
+            }
+            _ => panic!("Expected label offsets"),
+        }
+    }
+
+    #[test]
+    fn test_signature_help_for_user_function() {
+        let code = r#"
+public main = echo "Hello";
+greet $name: str = echo $name;
+add $a: int $b: int -> int = $a + $b;
+"#;
+
+        let ast = parse_script(code).unwrap();
+
+        // Find the "add" function
+        let add_fn = ast.fn_definitions.iter().find(|f| f.signature.fn_name == "add").unwrap();
+        let sig_info = create_signature_info(&add_fn.signature);
+
+        assert!(sig_info.label.contains("add"));
+        assert!(sig_info.label.contains("$a: int"));
+        assert!(sig_info.label.contains("$b: int"));
+        assert!(sig_info.label.contains("-> int"));
+        assert_eq!(sig_info.parameters.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_extract_function_name_edge_cases() {
+        // Function with underscore
+        assert_eq!(extract_function_name_at_cursor("my_function "), Some("my_function".to_string()));
+
+        // After equals sign
+        assert_eq!(extract_function_name_at_cursor("x = echo "), Some("echo".to_string()));
+
+        // Multiple spaces
+        assert_eq!(extract_function_name_at_cursor("    echo    "), Some("echo".to_string()));
+
+        // With parentheses (shouldn't happen in Shady but let's be safe)
+        assert_eq!(extract_function_name_at_cursor("result = stdout("), Some("stdout".to_string()));
     }
 }
