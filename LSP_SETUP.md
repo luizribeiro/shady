@@ -17,6 +17,7 @@ The Shady LSP server currently supports:
 1. **Document Synchronization** - Keeps track of open Shady files
 2. **Diagnostics** - Shows syntax errors in real-time as you type
 3. **Hover Information** - Shows function signatures when hovering over code (basic implementation)
+4. **Go to Definition** - Jump to function definitions by clicking on function names
 
 ## Editor Configuration
 
@@ -109,7 +110,6 @@ You should see a parse error diagnostic.
 ## Current Limitations
 
 - Hover information is basic (shows first function signature)
-- No goto definition
 - No autocompletion
 - No code actions
 - No formatting
@@ -118,14 +118,13 @@ You should see a parse error diagnostic.
 
 Possible improvements:
 
-1. **Go to Definition** - Jump to function definitions
-2. **Find References** - Find all uses of a function
-3. **Autocompletion** - Suggest function names, variables, and builtin functions
-4. **Signature Help** - Show parameter information while typing function calls
-5. **Code Actions** - Quick fixes for common errors
-6. **Formatting** - Auto-format Shady code
-7. **Rename** - Rename functions and variables across the file
-8. **Document Symbols** - Show outline of functions in the file
+1. **Find References** - Find all uses of a function
+2. **Autocompletion** - Suggest function names, variables, and builtin functions
+3. **Signature Help** - Show parameter information while typing function calls
+4. **Code Actions** - Quick fixes for common errors
+5. **Formatting** - Auto-format Shady code
+6. **Rename** - Rename functions and variables across the file
+7. **Document Symbols** - Show outline of functions in the file
 
 ## Development
 

@@ -91,6 +91,7 @@ impl LanguageServer for Backend {
                     TextDocumentSyncKind::FULL,
                 )),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                definition_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -175,6 +176,55 @@ impl LanguageServer for Backend {
 
         Ok(None)
     }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = &params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        let docs = self.documents.read().await;
+        let doc = match docs.get(uri) {
+            Some(doc) => doc,
+            None => return Ok(None),
+        };
+
+        // Re-parse the document to get the AST
+        let ast = match parse_script(&doc.text) {
+            Ok(ast) => ast,
+            Err(_) => return Ok(None),
+        };
+
+        // Convert position to byte offset
+        let offset = position_to_offset(&doc.text, position);
+
+        // Find the identifier at the cursor position
+        if let Some(identifier) = find_identifier_at_position(&doc.text, offset) {
+            // Try to find the function definition
+            for fn_def in &ast.fn_definitions {
+                if fn_def.signature.fn_name == identifier {
+                    // Found the definition - convert span to LSP range
+                    let start_pos = offset_to_position(&doc.text, 0);
+                    let end_pos = offset_to_position(&doc.text, identifier.len());
+
+                    let location = Location {
+                        uri: uri.clone(),
+                        range: Range::new(start_pos, end_pos),
+                    };
+
+                    return Ok(Some(GotoDefinitionResponse::Scalar(location)));
+                }
+            }
+
+            // Also check if the cursor is on a function call in the expression
+            if let Some(location) = find_function_call_definition(&ast, &doc.text, uri, &identifier) {
+                return Ok(Some(GotoDefinitionResponse::Scalar(location)));
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 /// Convert a byte offset to LSP Position (line and character)
@@ -196,6 +246,121 @@ fn offset_to_position(text: &str, offset: usize) -> Position {
     }
 
     Position::new(line, character)
+}
+
+/// Convert LSP Position to byte offset
+fn position_to_offset(text: &str, position: Position) -> usize {
+    let mut offset = 0;
+    let mut current_line = 0;
+    let mut current_char = 0;
+
+    for ch in text.chars() {
+        if current_line == position.line as usize && current_char == position.character as usize {
+            return offset;
+        }
+
+        if ch == '\n' {
+            current_line += 1;
+            current_char = 0;
+        } else {
+            current_char += 1;
+        }
+
+        offset += ch.len_utf8();
+    }
+
+    offset
+}
+
+/// Find the identifier at a given byte offset
+fn find_identifier_at_position(text: &str, offset: usize) -> Option<String> {
+    // Find the start and end of the identifier at this position
+    let chars: Vec<char> = text.chars().collect();
+    let mut char_offset = 0;
+    let mut target_index = None;
+
+    // Find the character index corresponding to the byte offset
+    for (i, &ch) in chars.iter().enumerate() {
+        if char_offset >= offset {
+            target_index = Some(i);
+            break;
+        }
+        char_offset += ch.len_utf8();
+    }
+
+    let target_index = target_index?;
+
+    // Check if we're on a valid identifier character
+    if target_index >= chars.len() || !is_identifier_char(chars[target_index]) {
+        return None;
+    }
+
+    // Find the start of the identifier
+    let mut start = target_index;
+    while start > 0 && is_identifier_char(chars[start - 1]) {
+        start -= 1;
+    }
+
+    // Find the end of the identifier
+    let mut end = target_index;
+    while end < chars.len() && is_identifier_char(chars[end]) {
+        end += 1;
+    }
+
+    Some(chars[start..end].iter().collect())
+}
+
+/// Check if a character is valid in an identifier
+fn is_identifier_char(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
+}
+
+/// Find the definition location for a function call
+fn find_function_call_definition(
+    ast: &crate::ast::ProgramAST,
+    text: &str,
+    uri: &Url,
+    fn_name: &str,
+) -> Option<Location> {
+    use crate::ast;
+
+    // Find the function definition in the AST
+    let _fn_def = ast::get_fn_by_name(ast, fn_name)?;
+
+    // We need to find where in the text this function is defined
+    // Search for the function name in the definition context
+    // For simplicity, we'll search for "fn_name =" or "fn_name $"
+    let search_patterns = [
+        format!("public {}", fn_name),
+        format!("infix {}", fn_name),
+        fn_name.to_string(),
+    ];
+
+    for (line_num, line) in text.lines().enumerate() {
+        for pattern in &search_patterns {
+            if let Some(col) = line.find(pattern) {
+                // Check if this is actually a function definition (has '=' after parameters)
+                if line.contains('=') {
+                    // Extract just the function name position
+                    let fn_name_col = if pattern.starts_with("public") || pattern.starts_with("infix") {
+                        col + pattern.len() - fn_name.len()
+                    } else {
+                        col
+                    };
+
+                    let start_pos = Position::new(line_num as u32, fn_name_col as u32);
+                    let end_pos = Position::new(line_num as u32, (fn_name_col + fn_name.len()) as u32);
+
+                    return Some(Location {
+                        uri: uri.clone(),
+                        range: Range::new(start_pos, end_pos),
+                    });
+                }
+            }
+        }
+    }
+
+    None
 }
 
 /// Create and run the LSP server
@@ -416,4 +581,157 @@ add $a: int $b: int -> int = $a + $b;
 
     // Integration-style tests using mock client would go here
     // For now, we've tested the core helper functions and parsing logic
+
+    // Tests for Go to Definition functionality
+
+    #[test]
+    fn test_position_to_offset_single_line() {
+        let text = "hello world";
+
+        assert_eq!(position_to_offset(text, Position::new(0, 0)), 0);
+        assert_eq!(position_to_offset(text, Position::new(0, 5)), 5);
+        assert_eq!(position_to_offset(text, Position::new(0, 11)), 11);
+    }
+
+    #[test]
+    fn test_position_to_offset_multiple_lines() {
+        let text = "line 1\nline 2\nline 3";
+
+        // Start of file
+        assert_eq!(position_to_offset(text, Position::new(0, 0)), 0);
+
+        // End of first line (before newline)
+        assert_eq!(position_to_offset(text, Position::new(0, 6)), 6);
+
+        // Start of second line (after first newline)
+        assert_eq!(position_to_offset(text, Position::new(1, 0)), 7);
+
+        // Middle of second line
+        assert_eq!(position_to_offset(text, Position::new(1, 3)), 10);
+
+        // Start of third line
+        assert_eq!(position_to_offset(text, Position::new(2, 0)), 14);
+    }
+
+    #[test]
+    fn test_position_to_offset_roundtrip() {
+        let text = "public main = echo \"Hello\";\ngreet $name: str = echo $name;";
+
+        // Test various positions
+        let positions = vec![
+            Position::new(0, 0),
+            Position::new(0, 7),
+            Position::new(0, 12),
+            Position::new(1, 0),
+            Position::new(1, 6),
+            Position::new(1, 14),
+        ];
+
+        for pos in positions {
+            let offset = position_to_offset(text, pos);
+            let converted_back = offset_to_position(text, offset);
+            assert_eq!(
+                converted_back, pos,
+                "Roundtrip failed for position {:?}",
+                pos
+            );
+        }
+    }
+
+    #[test]
+    fn test_find_identifier_at_position() {
+        let text = "public main = echo \"Hello\";";
+
+        // Test finding "public"
+        assert_eq!(find_identifier_at_position(text, 0), Some("public".to_string()));
+        assert_eq!(find_identifier_at_position(text, 3), Some("public".to_string()));
+
+        // Test finding "main"
+        assert_eq!(find_identifier_at_position(text, 7), Some("main".to_string()));
+        assert_eq!(find_identifier_at_position(text, 10), Some("main".to_string()));
+
+        // Test finding "echo"
+        assert_eq!(find_identifier_at_position(text, 14), Some("echo".to_string()));
+        assert_eq!(find_identifier_at_position(text, 17), Some("echo".to_string()));
+
+        // Test finding nothing on whitespace
+        assert_eq!(find_identifier_at_position(text, 6), None);
+
+        // Test finding nothing on special characters
+        assert_eq!(find_identifier_at_position(text, 12), None); // '='
+    }
+
+    #[test]
+    fn test_find_identifier_with_underscores() {
+        let text = "my_function = other_func 42;";
+
+        // Test finding "my_function"
+        assert_eq!(find_identifier_at_position(text, 0), Some("my_function".to_string()));
+        assert_eq!(find_identifier_at_position(text, 5), Some("my_function".to_string()));
+        assert_eq!(find_identifier_at_position(text, 10), Some("my_function".to_string()));
+
+        // Test finding "other_func"
+        assert_eq!(find_identifier_at_position(text, 14), Some("other_func".to_string()));
+        assert_eq!(find_identifier_at_position(text, 23), Some("other_func".to_string()));
+    }
+
+    #[test]
+    fn test_find_identifier_multiline() {
+        let text = "public main = echo \"Hello\";\ngreet $name: str = echo $name;";
+
+        // Find "main" on first line
+        let main_offset = position_to_offset(text, Position::new(0, 7));
+        assert_eq!(find_identifier_at_position(text, main_offset), Some("main".to_string()));
+
+        // Find "greet" on second line
+        let greet_offset = position_to_offset(text, Position::new(1, 0));
+        assert_eq!(find_identifier_at_position(text, greet_offset), Some("greet".to_string()));
+
+        // Find "name" on second line (first occurrence)
+        let name1_offset = position_to_offset(text, Position::new(1, 7));
+        assert_eq!(find_identifier_at_position(text, name1_offset), Some("name".to_string()));
+    }
+
+    #[test]
+    fn test_is_identifier_char() {
+        assert!(is_identifier_char('a'));
+        assert!(is_identifier_char('Z'));
+        assert!(is_identifier_char('0'));
+        assert!(is_identifier_char('_'));
+
+        assert!(!is_identifier_char(' '));
+        assert!(!is_identifier_char('='));
+        assert!(!is_identifier_char('$'));
+        assert!(!is_identifier_char(';'));
+        assert!(!is_identifier_char('('));
+        assert!(!is_identifier_char(')'));
+    }
+
+    #[test]
+    fn test_goto_definition_finds_function() {
+        let code = r#"
+public main = echo "Hello";
+greet $name: str = echo $name;
+add $a: int $b: int -> int = $a + $b;
+"#;
+
+        let ast = parse_script(code).unwrap();
+
+        // Test finding "greet" function
+        let url = Url::parse("file:///test.shady").unwrap();
+        let location = find_function_call_definition(&ast, code, &url, "greet");
+        assert!(location.is_some());
+
+        let loc = location.unwrap();
+        assert_eq!(loc.range.start.line, 2);
+        assert!(loc.range.start.character < 10);
+
+        // Test finding "add" function
+        let location = find_function_call_definition(&ast, code, &url, "add");
+        assert!(location.is_some());
+
+        // Test not finding non-existent function
+        let location = find_function_call_definition(&ast, code, &url, "nonexistent");
+        assert!(location.is_none());
+    }
 }
