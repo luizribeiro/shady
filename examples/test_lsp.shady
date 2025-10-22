@@ -1,0 +1,16 @@
+# Example Shady file for testing the LSP server
+
+# This should work fine
+public main = echo "Hello from Shady!";
+
+# Function with parameters
+greet $name: str = echo ("Hello, " + $name);
+
+# Function with multiple parameters and types
+add $a: int $b: int -> int = $a + $b;
+
+# Function with default values
+print_number $n: int (42) = echo (to_string $n);
+
+# List operations
+sum_list $numbers: [int] = first $numbers;

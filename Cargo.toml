@@ -13,11 +13,19 @@ pest_derive = "2.5.3"
 shady-macros = { path = "shady-macros" }
 snailquote = "0.3.1"
 thiserror = "1.0"
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 [dev-dependencies]
 assert_cmd = "2.0.8"
 predicates = "2.1.5"
 criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bin]]
+name = "shady-lsp"
+path = "src/bin/lsp.rs"
 
 [[bench]]
 name = "proc_pipes"

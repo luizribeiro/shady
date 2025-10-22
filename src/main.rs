@@ -7,6 +7,7 @@ mod builtins;
 mod cli;
 mod error;
 mod eval;
+mod lsp;
 mod types;
 
 use clap::Parser;
