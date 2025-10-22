@@ -206,3 +206,214 @@ pub async fn run_server() {
     let (service, socket) = LspService::new(|client| Backend::new(client));
     Server::new(stdin, stdout, socket).serve(service).await;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_offset_to_position_single_line() {
+        let text = "hello world";
+
+        assert_eq!(offset_to_position(text, 0), Position::new(0, 0));
+        assert_eq!(offset_to_position(text, 5), Position::new(0, 5));
+        assert_eq!(offset_to_position(text, 11), Position::new(0, 11));
+    }
+
+    #[test]
+    fn test_offset_to_position_multiple_lines() {
+        let text = "line 1\nline 2\nline 3";
+
+        // Start of file
+        assert_eq!(offset_to_position(text, 0), Position::new(0, 0));
+
+        // End of first line (before newline)
+        assert_eq!(offset_to_position(text, 6), Position::new(0, 6));
+
+        // Start of second line (after first newline)
+        assert_eq!(offset_to_position(text, 7), Position::new(1, 0));
+
+        // Middle of second line
+        assert_eq!(offset_to_position(text, 10), Position::new(1, 3));
+
+        // Start of third line
+        assert_eq!(offset_to_position(text, 14), Position::new(2, 0));
+
+        // End of file
+        assert_eq!(offset_to_position(text, 20), Position::new(2, 6));
+    }
+
+    #[test]
+    fn test_offset_to_position_empty_string() {
+        let text = "";
+        assert_eq!(offset_to_position(text, 0), Position::new(0, 0));
+    }
+
+    #[test]
+    fn test_offset_to_position_only_newlines() {
+        let text = "\n\n\n";
+
+        assert_eq!(offset_to_position(text, 0), Position::new(0, 0));
+        assert_eq!(offset_to_position(text, 1), Position::new(1, 0));
+        assert_eq!(offset_to_position(text, 2), Position::new(2, 0));
+        assert_eq!(offset_to_position(text, 3), Position::new(3, 0));
+    }
+
+    #[test]
+    fn test_offset_to_position_with_unicode() {
+        // Unicode character "😀" takes 4 bytes but is 1 character
+        let text = "hello 😀 world";
+
+        // Before emoji
+        assert_eq!(offset_to_position(text, 6), Position::new(0, 6));
+
+        // After emoji (emoji is 1 character position)
+        assert_eq!(offset_to_position(text, 7), Position::new(0, 7));
+
+        // After space after emoji
+        assert_eq!(offset_to_position(text, 8), Position::new(0, 8));
+    }
+
+    #[test]
+    fn test_offset_to_position_shady_code() {
+        let text = "# Comment\npublic main = echo \"Hello\";\n";
+
+        // Start of file
+        assert_eq!(offset_to_position(text, 0), Position::new(0, 0));
+
+        // Start of second line
+        assert_eq!(offset_to_position(text, 10), Position::new(1, 0));
+
+        // At "main"
+        assert_eq!(offset_to_position(text, 17), Position::new(1, 7));
+
+        // At semicolon
+        assert_eq!(offset_to_position(text, 37), Position::new(1, 27));
+    }
+
+    #[test]
+    fn test_parse_valid_shady_code() {
+        let valid_code = "public main = echo \"Hello\";";
+
+        // Should parse without errors
+        match parse_script(valid_code) {
+            Ok(ast) => {
+                assert_eq!(ast.fn_definitions.len(), 1);
+                assert_eq!(ast.fn_definitions[0].signature.fn_name, "main");
+            }
+            Err(e) => panic!("Expected valid code to parse, got error: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_shady_code_missing_semicolon() {
+        let invalid_code = "public main = echo \"Hello\"";
+
+        // Should fail to parse
+        match parse_script(invalid_code) {
+            Ok(_) => panic!("Expected invalid code to fail parsing"),
+            Err(e) => {
+                // Verify it's a parse error
+                assert!(matches!(e, ShadyError::ParseErrorSimple { .. }));
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_shady_code_bad_syntax() {
+        let invalid_code = "public main = = echo";
+
+        // Should fail to parse
+        match parse_script(invalid_code) {
+            Ok(_) => panic!("Expected invalid code to fail parsing"),
+            Err(_) => {
+                // Expected to fail
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_multiple_functions() {
+        let code = r#"
+public main = echo "Hello";
+greet $name: str = echo ("Hi, " + $name);
+add $a: int $b: int -> int = $a + $b;
+"#;
+
+        match parse_script(code) {
+            Ok(ast) => {
+                assert_eq!(ast.fn_definitions.len(), 3);
+                assert_eq!(ast.fn_definitions[0].signature.fn_name, "main");
+                assert_eq!(ast.fn_definitions[1].signature.fn_name, "greet");
+                assert_eq!(ast.fn_definitions[2].signature.fn_name, "add");
+            }
+            Err(e) => panic!("Expected valid code to parse, got error: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_file() {
+        let code = "";
+
+        match parse_script(code) {
+            Ok(ast) => {
+                assert_eq!(ast.fn_definitions.len(), 0);
+            }
+            Err(e) => panic!("Expected empty file to parse, got error: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_parse_only_comments() {
+        let code = "# This is a comment\n# Another comment";
+
+        match parse_script(code) {
+            Ok(ast) => {
+                assert_eq!(ast.fn_definitions.len(), 0);
+            }
+            Err(e) => panic!("Expected comments-only file to parse, got error: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_diagnostic_position_for_parse_error() {
+        let invalid_code = "public main = echo \"Hello\"";
+
+        match parse_script(invalid_code) {
+            Err(ShadyError::ParseErrorSimple { message: _, span }) => {
+                // Get the position of the error
+                let start_pos = offset_to_position(invalid_code, span.offset());
+                let end_pos = offset_to_position(invalid_code, span.offset() + span.len());
+
+                // The error should be at or near the end where semicolon is missing
+                assert!(start_pos.line == 0);
+                assert!(start_pos.character > 0);
+                assert!(end_pos.line == 0);
+
+                // Range should be valid
+                assert!(end_pos.character >= start_pos.character);
+            }
+            Err(e) => panic!("Expected ParseErrorSimple, got: {:?}", e),
+            Ok(_) => panic!("Expected code to fail parsing"),
+        }
+    }
+
+    #[test]
+    fn test_diagnostic_position_multiline_error() {
+        let invalid_code = "public main = echo \"Hello\";\n\ngreet $name: str = echo";
+
+        match parse_script(invalid_code) {
+            Err(ShadyError::ParseErrorSimple { message: _, span }) => {
+                let start_pos = offset_to_position(invalid_code, span.offset());
+
+                // Error should be on line 2 (0-indexed)
+                assert!(start_pos.line >= 2);
+            }
+            Err(e) => panic!("Expected ParseErrorSimple, got: {:?}", e),
+            Ok(_) => panic!("Expected code to fail parsing"),
+        }
+    }
+
+    // Integration-style tests using mock client would go here
+    // For now, we've tested the core helper functions and parsing logic
+}
