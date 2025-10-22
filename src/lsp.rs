@@ -92,6 +92,11 @@ impl LanguageServer for Backend {
                 )),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
+                completion_provider: Some(CompletionOptions {
+                    resolve_provider: Some(false),
+                    trigger_characters: Some(vec![" ".to_string(), "$".to_string()]),
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -224,6 +229,54 @@ impl LanguageServer for Backend {
         }
 
         Ok(None)
+    }
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let uri = &params.text_document_position.text_document.uri;
+        let _position = params.text_document_position.position;
+
+        let docs = self.documents.read().await;
+        let doc = match docs.get(uri) {
+            Some(doc) => doc,
+            None => return Ok(None),
+        };
+
+        // Re-parse the document to get the AST
+        let ast = match parse_script(&doc.text) {
+            Ok(ast) => ast,
+            Err(_) => {
+                // Even if parsing fails, we can still provide basic completions
+                return Ok(Some(CompletionResponse::Array(get_builtin_completions())));
+            }
+        };
+
+        // Get all available completions
+        let mut completions = Vec::new();
+
+        // Add user-defined functions
+        for fn_def in &ast.fn_definitions {
+            let detail = if fn_def.signature.parameters.is_empty() {
+                format!("{} -> {}", fn_def.signature.fn_name, fn_def.signature.return_type)
+            } else {
+                fn_def.signature.to_string()
+            };
+
+            completions.push(CompletionItem {
+                label: fn_def.signature.fn_name.clone(),
+                kind: Some(CompletionItemKind::FUNCTION),
+                detail: Some(detail),
+                documentation: Some(Documentation::String(format!(
+                    "User-defined function{}",
+                    if fn_def.signature.is_public { " (public)" } else { "" }
+                ))),
+                ..Default::default()
+            });
+        }
+
+        // Add builtin functions
+        completions.extend(get_builtin_completions());
+
+        Ok(Some(CompletionResponse::Array(completions)))
     }
 }
 
@@ -361,6 +414,120 @@ fn find_function_call_definition(
     }
 
     None
+}
+
+/// Get completion items for builtin functions
+fn get_builtin_completions() -> Vec<CompletionItem> {
+    vec![
+        CompletionItem {
+            label: "echo".to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some("echo $msg: str -> proc".to_string()),
+            documentation: Some(Documentation::String(
+                "Print a message to stdout (external command)".to_string(),
+            )),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "print".to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some("print $s: str -> int".to_string()),
+            documentation: Some(Documentation::String(
+                "Print a string and return 0".to_string(),
+            )),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "exec".to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some("exec $proc: proc -> int".to_string()),
+            documentation: Some(Documentation::String(
+                "Execute a process and return its exit code".to_string(),
+            )),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "seq".to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some("seq $procs: [proc] -> int".to_string()),
+            documentation: Some(Documentation::String(
+                "Execute a sequence of processes and return the last exit code".to_string(),
+            )),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "stdout".to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some("stdout $proc: proc -> str".to_string()),
+            documentation: Some(Documentation::String(
+                "Capture stdout from a process as a string".to_string(),
+            )),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "lines".to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some("lines $s: str -> [str] or lines $proc: proc -> [str]".to_string()),
+            documentation: Some(Documentation::String(
+                "Split a string or process output into lines".to_string(),
+            )),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "to_string".to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some("to_string $i: int -> str".to_string()),
+            documentation: Some(Documentation::String(
+                "Convert an integer to a string".to_string(),
+            )),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "first".to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some("first $list: [any] -> any".to_string()),
+            documentation: Some(Documentation::String(
+                "Get the first element of a list".to_string(),
+            )),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "add_all".to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some("add_all $list: [int] -> int".to_string()),
+            documentation: Some(Documentation::String(
+                "Sum all integers in a list".to_string(),
+            )),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "env".to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some("env $var_name: str $default: str -> str".to_string()),
+            documentation: Some(Documentation::String(
+                "Get an environment variable with a default value".to_string(),
+            )),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "os".to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some("os -> str".to_string()),
+            documentation: Some(Documentation::String(
+                "Get the operating system name".to_string(),
+            )),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "cat".to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some("cat $file: str -> proc".to_string()),
+            documentation: Some(Documentation::String(
+                "Read and display file contents (external command)".to_string(),
+            )),
+            ..Default::default()
+        },
+    ]
 }
 
 /// Create and run the LSP server
@@ -733,5 +900,139 @@ add $a: int $b: int -> int = $a + $b;
         // Test not finding non-existent function
         let location = find_function_call_definition(&ast, code, &url, "nonexistent");
         assert!(location.is_none());
+    }
+
+    // Tests for Autocompletion functionality
+
+    #[test]
+    fn test_get_builtin_completions() {
+        let completions = get_builtin_completions();
+
+        // Should have at least the core builtin functions
+        assert!(completions.len() >= 10);
+
+        // Check for some specific builtins
+        let labels: Vec<String> = completions.iter().map(|c| c.label.clone()).collect();
+        assert!(labels.contains(&"exec".to_string()));
+        assert!(labels.contains(&"stdout".to_string()));
+        assert!(labels.contains(&"print".to_string()));
+        assert!(labels.contains(&"first".to_string()));
+        assert!(labels.contains(&"env".to_string()));
+
+        // Check that completions have proper metadata
+        for completion in &completions {
+            assert!(completion.kind == Some(CompletionItemKind::FUNCTION));
+            assert!(completion.detail.is_some());
+            assert!(completion.documentation.is_some());
+        }
+    }
+
+    #[test]
+    fn test_completion_includes_user_functions() {
+        let code = r#"
+public main = echo "Hello";
+greet $name: str = echo $name;
+add $a: int $b: int -> int = $a + $b;
+"#;
+
+        let ast = parse_script(code).unwrap();
+
+        // Simulate what the completion handler does
+        let mut completions = Vec::new();
+
+        // Add user-defined functions
+        for fn_def in &ast.fn_definitions {
+            let detail = if fn_def.signature.parameters.is_empty() {
+                format!("{} -> {}", fn_def.signature.fn_name, fn_def.signature.return_type)
+            } else {
+                fn_def.signature.to_string()
+            };
+
+            completions.push(CompletionItem {
+                label: fn_def.signature.fn_name.clone(),
+                kind: Some(CompletionItemKind::FUNCTION),
+                detail: Some(detail),
+                documentation: Some(Documentation::String(format!(
+                    "User-defined function{}",
+                    if fn_def.signature.is_public { " (public)" } else { "" }
+                ))),
+                ..Default::default()
+            });
+        }
+
+        // Verify user functions are included
+        assert_eq!(completions.len(), 3);
+
+        let labels: Vec<String> = completions.iter().map(|c| c.label.clone()).collect();
+        assert!(labels.contains(&"main".to_string()));
+        assert!(labels.contains(&"greet".to_string()));
+        assert!(labels.contains(&"add".to_string()));
+
+        // Check that main is marked as public
+        let main_completion = completions.iter().find(|c| c.label == "main").unwrap();
+        match &main_completion.documentation {
+            Some(Documentation::String(s)) => assert!(s.contains("public")),
+            _ => panic!("Expected string documentation"),
+        }
+    }
+
+    #[test]
+    fn test_completion_with_invalid_code() {
+        let code = "public main = echo"; // Invalid - missing semicolon
+
+        // Should still provide builtin completions even if parsing fails
+        match parse_script(code) {
+            Err(_) => {
+                let completions = get_builtin_completions();
+                assert!(completions.len() > 0);
+            }
+            Ok(_) => panic!("Expected parsing to fail"),
+        }
+    }
+
+    #[test]
+    fn test_completion_item_details() {
+        let completions = get_builtin_completions();
+
+        // Check specific completion details
+        let exec_completion = completions.iter().find(|c| c.label == "exec").unwrap();
+        assert_eq!(exec_completion.detail, Some("exec $proc: proc -> int".to_string()));
+        assert!(exec_completion.documentation.is_some());
+
+        let stdout_completion = completions.iter().find(|c| c.label == "stdout").unwrap();
+        assert_eq!(stdout_completion.detail, Some("stdout $proc: proc -> str".to_string()));
+
+        let first_completion = completions.iter().find(|c| c.label == "first").unwrap();
+        assert_eq!(first_completion.detail, Some("first $list: [any] -> any".to_string()));
+    }
+
+    #[test]
+    fn test_completion_function_signatures() {
+        let code = r#"
+simple = 42;
+with_params $x: int $y: str = echo $y;
+with_return -> int = 100;
+"#;
+
+        let ast = parse_script(code).unwrap();
+
+        let mut completions = Vec::new();
+        for fn_def in &ast.fn_definitions {
+            let detail = if fn_def.signature.parameters.is_empty() {
+                format!("{} -> {}", fn_def.signature.fn_name, fn_def.signature.return_type)
+            } else {
+                fn_def.signature.to_string()
+            };
+            completions.push((fn_def.signature.fn_name.clone(), detail));
+        }
+
+        // Check that we format details correctly
+        let simple_detail = completions.iter().find(|(name, _)| name == "simple").unwrap();
+        assert!(simple_detail.1.contains("simple"));
+
+        let with_params_detail = completions.iter().find(|(name, _)| name == "with_params").unwrap();
+        assert!(with_params_detail.1.contains("with_params"));
+        assert!(with_params_detail.1.contains("int"));
+        assert!(with_params_detail.1.contains("str"));
     }
 }
