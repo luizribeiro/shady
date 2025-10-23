@@ -1,8 +1,7 @@
 // Higher-order functional primitives (map, filter, reduce)
-// These are implemented as Eval builtins (special forms) because they need
+// These are implemented as Eval builtins (context-aware) because they need
 // access to the evaluation context to call lambdas.
 
-use crate::ast::Expr;
 use crate::error::{Result, ShadyError};
 use crate::eval::{eval_expr_with_type, LocalContext, ShadyContext};
 use crate::types::{Type, Value};
@@ -12,32 +11,19 @@ use shady_macros::eval_builtin;
 /// map $fn: fn(T) -> R $list: [T] -> [R]
 #[eval_builtin("map", "fn(any)->any, [any]", "[any]")]
 pub fn map_impl(
-    arg_exprs: &[Expr],
+    args: Vec<Value>,
     local_context: &LocalContext,
     context: &ShadyContext,
 ) -> Result<Value> {
     // Argument validation is handled by the macro-generated wrapper
-    let lambda_expr = &arg_exprs[0];
-    let list_expr = &arg_exprs[1];
-
-    // Re-evaluate the lambda (already validated by wrapper)
-    let lambda_val = eval_expr_with_type(local_context, context, lambda_expr, None)?;
-    let lambda = match lambda_val {
+    let lambda = match &args[0] {
         Value::Lambda(l) => l,
         _ => unreachable!("Lambda validation should have been done by wrapper"),
     };
 
-    // Evaluate the list
-    let list_val = eval_expr_with_type(local_context, context, list_expr, None)?;
-    let (_inner_type, values) = match list_val {
+    let (_inner_type, values) = match &args[1] {
         Value::List { inner_type, values } => (inner_type, values),
-        _ => {
-            return Err(ShadyError::TypeMismatch {
-                expected: "list".to_string(),
-                actual: format!("{}", list_val.get_type()),
-                span: list_expr.span().to_source_span(),
-            })
-        }
+        _ => unreachable!("Type validation should have been done by eval"),
     };
 
     // Apply lambda to each element
@@ -47,7 +33,7 @@ pub fn map_impl(
     for value in values {
         // Create context with captured environment + parameter binding
         let mut lambda_vars = lambda.captured_env.clone();
-        lambda_vars.insert(lambda.parameters[0].clone(), value);
+        lambda_vars.insert(lambda.parameters[0].clone(), value.clone());
 
         let lambda_context = LocalContext {
             vars: lambda_vars,
@@ -83,32 +69,19 @@ pub fn map_impl(
 /// filter $fn: fn(T) -> bool $list: [T] -> [T]
 #[eval_builtin("filter", "fn(any)->bool, [any]", "[any]")]
 pub fn filter_impl(
-    arg_exprs: &[Expr],
+    args: Vec<Value>,
     local_context: &LocalContext,
     context: &ShadyContext,
 ) -> Result<Value> {
     // Argument validation is handled by the macro-generated wrapper
-    let lambda_expr = &arg_exprs[0];
-    let list_expr = &arg_exprs[1];
-
-    // Re-evaluate the lambda (already validated by wrapper)
-    let lambda_val = eval_expr_with_type(local_context, context, lambda_expr, None)?;
-    let lambda = match lambda_val {
+    let lambda = match &args[0] {
         Value::Lambda(l) => l,
         _ => unreachable!("Lambda validation should have been done by wrapper"),
     };
 
-    // Evaluate the list
-    let list_val = eval_expr_with_type(local_context, context, list_expr, None)?;
-    let (inner_type, values) = match list_val {
+    let (inner_type, values) = match &args[1] {
         Value::List { inner_type, values } => (inner_type, values),
-        _ => {
-            return Err(ShadyError::TypeMismatch {
-                expected: "list".to_string(),
-                actual: format!("{}", list_val.get_type()),
-                span: list_expr.span().to_source_span(),
-            })
-        }
+        _ => unreachable!("Type validation should have been done by eval"),
     };
 
     // Filter elements where lambda returns true
@@ -130,20 +103,20 @@ pub fn filter_impl(
 
         // Check result is bool
         match result {
-            Value::Bool(true) => result_values.push(value),
+            Value::Bool(true) => result_values.push(value.clone()),
             Value::Bool(false) => {}
             _ => {
                 return Err(ShadyError::TypeMismatch {
                     expected: "bool".to_string(),
                     actual: format!("{}", result.get_type()),
-                    span: lambda_expr.span().to_source_span(),
+                    span: miette::SourceSpan::from(0..0),
                 })
             }
         }
     }
 
     Ok(Value::List {
-        inner_type,
+        inner_type: inner_type.clone(),
         values: result_values,
     })
 }
@@ -152,36 +125,21 @@ pub fn filter_impl(
 /// reduce $fn: fn(Acc, T) -> Acc $init: Acc $list: [T] -> Acc
 #[eval_builtin("reduce", "fn(any,any)->any, any, [any]", "any")]
 pub fn reduce_impl(
-    arg_exprs: &[Expr],
+    args: Vec<Value>,
     local_context: &LocalContext,
     context: &ShadyContext,
 ) -> Result<Value> {
     // Argument validation is handled by the macro-generated wrapper
-    let lambda_expr = &arg_exprs[0];
-    let init_expr = &arg_exprs[1];
-    let list_expr = &arg_exprs[2];
-
-    // Re-evaluate the lambda (already validated by wrapper)
-    let lambda_val = eval_expr_with_type(local_context, context, lambda_expr, None)?;
-    let lambda = match lambda_val {
+    let lambda = match &args[0] {
         Value::Lambda(l) => l,
         _ => unreachable!("Lambda validation should have been done by wrapper"),
     };
 
-    // Evaluate the initial value
-    let mut accumulator = eval_expr_with_type(local_context, context, init_expr, None)?;
+    let mut accumulator = args[1].clone();
 
-    // Evaluate the list
-    let list_val = eval_expr_with_type(local_context, context, list_expr, None)?;
-    let values = match list_val {
+    let values = match &args[2] {
         Value::List { values, .. } => values,
-        _ => {
-            return Err(ShadyError::TypeMismatch {
-                expected: "list".to_string(),
-                actual: format!("{}", list_val.get_type()),
-                span: list_expr.span().to_source_span(),
-            })
-        }
+        _ => unreachable!("Type validation should have been done by eval"),
     };
 
     // Fold the list
@@ -189,7 +147,7 @@ pub fn reduce_impl(
         // Create context with captured environment + parameter bindings
         let mut lambda_vars = lambda.captured_env.clone();
         lambda_vars.insert(lambda.parameters[0].clone(), accumulator.clone());
-        lambda_vars.insert(lambda.parameters[1].clone(), value);
+        lambda_vars.insert(lambda.parameters[1].clone(), value.clone());
 
         let lambda_context = LocalContext {
             vars: lambda_vars,

@@ -10,12 +10,12 @@ use crate::builtins;
 use crate::error::{Result, ShadyError};
 use crate::types::{Proc, Type, Value};
 
-/// Builtin function types: Pure (eagerly evaluated) or Eval (special forms that need eval access)
+/// Builtin function types: Pure (eagerly evaluated) or Eval (context-aware)
 pub enum Builtin {
     /// Pure builtin: receives evaluated arguments
     Pure(Box<dyn Fn(Vec<Value>) -> Result<Value>>),
-    /// Eval builtin: receives unevaluated expressions and evaluation contexts (for special forms)
-    Eval(Box<dyn Fn(&[Expr], &LocalContext, &ShadyContext) -> Result<Value>>),
+    /// Eval builtin: receives evaluated arguments plus evaluation contexts (for calling lambdas, etc.)
+    Eval(Box<dyn Fn(Vec<Value>, &LocalContext, &ShadyContext) -> Result<Value>>),
 }
 
 // FnSignature contains interior mutability through Value -> Proc -> Rc<RefCell<Child>>,
@@ -284,10 +284,13 @@ pub fn eval_expr_with_type(
             let param_types: Vec<Type> = parameters.iter().map(|(_, typ)| typ.clone()).collect();
 
             // Determine return type (use provided or infer from expected_type or default to Any)
-            let ret_type = return_type
-                .clone()
-                .or_else(|| expected_type.cloned())
-                .unwrap_or(Type::Any);
+            let ret_type = return_type.clone().or_else(|| {
+                // If expected_type is a function type, extract its return type
+                expected_type.and_then(|t| match t {
+                    Type::Fn(_, ret) => Some((**ret).clone()),
+                    _ => Some(t.clone()),
+                })
+            }).unwrap_or(Type::Any);
 
             Ok(Value::Lambda(crate::types::Lambda {
                 parameters: param_names,
@@ -375,18 +378,7 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
         );
     }
 
-    // Check if there's an Eval builtin with this name first
-    // Eval builtins need unevaluated expressions, so we check them before evaluating args
-    if let Some(builtin_sigs) = get_builtins_by_name(context, fn_name) {
-        for sig in builtin_sigs {
-            if let Some(Builtin::Eval(f)) = context.builtins.get(sig) {
-                // Found an Eval builtin - call it with unevaluated expressions
-                return f(arg_exprs, local_context, context);
-            }
-        }
-    }
-
-    // Not an Eval builtin, so evaluate arguments for Pure builtins and user functions
+    // Evaluate arguments for all builtins and user functions
     let param_types: Option<Vec<Type>> = {
         // Check if it's a user-defined function
         if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
@@ -446,12 +438,8 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
 
     if let Some(builtin) = get_builtin(context, &signature) {
         return match builtin {
-            Builtin::Pure(f) => f(arguments),
-            Builtin::Eval(f) => {
-                // Should not reach here as we checked Eval builtins above
-                // But handle it anyway for safety
-                f(arg_exprs, local_context, context)
-            }
+            Builtin::Pure(f) => f(arguments.clone()),
+            Builtin::Eval(f) => f(arguments.clone(), local_context, context),
         };
     }
 

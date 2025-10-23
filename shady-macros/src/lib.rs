@@ -269,25 +269,25 @@ pub fn eval_builtin(args: TokenStream, input: TokenStream) -> TokenStream {
 
         // Generate a wrapper that validates arguments
         fn #wrapper_ident(
-            arg_exprs: &[crate::ast::Expr],
+            args: Vec<crate::types::Value>,
             local_context: &crate::eval::LocalContext,
             context: &crate::eval::ShadyContext,
         ) -> crate::error::Result<crate::types::Value> {
             // Check argument count
-            if arg_exprs.len() != #num_params {
+            if args.len() != #num_params {
                 return Err(crate::error::ShadyError::EvalError(format!(
                     "{} requires exactly {} argument{}, got {}",
                     #fn_name,
                     #num_params,
                     if #num_params == 1 { "" } else { "s" },
-                    arg_exprs.len()
+                    args.len()
                 )));
             }
 
             #lambda_validations
 
             // Call the actual implementation
-            #orig_fun_ident(arg_exprs, local_context, context)
+            #orig_fun_ident(args, local_context, context)
         }
 
         #[allow(clippy::mutable_key_type)]
@@ -377,7 +377,7 @@ fn generate_lambda_validation(spec: &str, arg_index: usize, fn_name: &str) -> Op
                 return Err(crate::error::ShadyError::TypeMismatch {
                     expected: "bool".to_string(),
                     actual: format!("{}", lambda.return_type),
-                    span: arg_exprs[#arg_index].span().to_source_span(),
+                    span: miette::SourceSpan::from(0..0),
                 });
             }
         }
@@ -388,15 +388,13 @@ fn generate_lambda_validation(spec: &str, arg_index: usize, fn_name: &str) -> Op
     Some(quote! {
         // Validate lambda parameter for argument #arg_index
         {
-            let lambda_expr = &arg_exprs[#arg_index];
-            let lambda_val = crate::eval::eval_expr_with_type(local_context, context, lambda_expr, None)?;
-            let lambda = match lambda_val {
-                crate::types::Value::Lambda(ref l) => l,
-                _ => {
+            let lambda = match &args[#arg_index] {
+                crate::types::Value::Lambda(l) => l,
+                val => {
                     return Err(crate::error::ShadyError::TypeMismatch {
                         expected: "lambda function".to_string(),
-                        actual: format!("{}", lambda_val.get_type()),
-                        span: lambda_expr.span().to_source_span(),
+                        actual: format!("{}", val.get_type()),
+                        span: miette::SourceSpan::from(0..0),
                     });
                 }
             };
@@ -412,7 +410,7 @@ fn generate_lambda_validation(spec: &str, arg_index: usize, fn_name: &str) -> Op
                         if #expected_param_count == 1 { "" } else { "s" },
                         lambda.parameters.len()
                     ),
-                    span: lambda_expr.span().to_source_span(),
+                    span: miette::SourceSpan::from(0..0),
                 });
             }
 
