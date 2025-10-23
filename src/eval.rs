@@ -186,6 +186,37 @@ pub fn eval_expr_with_type(
                 }),
             }
         }
+        Expr::Block { expressions, .. } => {
+            // Evaluate all expressions in the block sequentially
+            // Auto-exec intermediate Proc values, return the last value
+            if expressions.is_empty() {
+                // Empty block returns unit (we'll use Int(0) for now)
+                return Ok(Value::Int(0));
+            }
+
+            let last_idx = expressions.len() - 1;
+            for (i, expr) in expressions.iter().enumerate() {
+                let value = eval_expr_with_type(
+                    local_context,
+                    context,
+                    expr,
+                    if i == last_idx { expected_type } else { None },
+                )?;
+
+                // For intermediate expressions (not the last one),
+                // auto-exec if it's a Proc
+                if i < last_idx {
+                    if let Value::Proc(proc) = value {
+                        builtins::proc::exec(proc)?;
+                    }
+                } else {
+                    // Last expression - return its value
+                    return Ok(value);
+                }
+            }
+
+            unreachable!("Should have returned in the loop")
+        }
         Expr::List { elements, span } => {
             // Extract inner type from expected type if it's a list type
             let expected_inner_type = expected_type.and_then(|t| match t {
@@ -469,6 +500,9 @@ mod tests {
             values: vec![Value::Int(3), Value::Int(7)],
         }),
         eval_first: ("first [5; 3; 2]", Value::Int(5)),
+        eval_block_simple: ("{ 42 }", Value::Int(42)),
+        eval_block_returns_last: ("{ 1; 2; 3 }", Value::Int(3)),
+        eval_block_with_computation: ("{ 1 + 1; 2 + 2 }", Value::Int(4)),
     }
 
     #[test]
@@ -1019,5 +1053,42 @@ mod tests {
             }
             e => panic!("Expected FunctionSignatureMismatch error, got {:?}", e),
         }
+    }
+
+    // Block expression tests
+    #[test]
+    fn eval_block_auto_execs_intermediate_procs() {
+        // Test that blocks automatically execute intermediate Proc values
+        // The echo commands should execute, and the block returns 42
+        let script = "public main = { echo test1; echo test2; 42 };";
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
+
+        // Should successfully execute both echo commands and return 42
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Int(42));
+    }
+
+    #[test]
+    fn eval_block_empty() {
+        // Test that empty blocks return 0
+        let script = "public main = { };";
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Int(0));
     }
 }

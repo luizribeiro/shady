@@ -270,6 +270,10 @@ pub enum Expr {
         elements: Vec<Expr>,
         span: Span,
     },
+    Block {
+        expressions: Vec<Expr>,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -281,6 +285,7 @@ impl Expr {
             Expr::Call { span, .. } => span,
             Expr::If { span, .. } => span,
             Expr::List { span, .. } => span,
+            Expr::Block { span, .. } => span,
         }
     }
 }
@@ -417,6 +422,24 @@ fn parse_list(node: Node, source: &[u8]) -> Expr {
     Expr::List { elements, span }
 }
 
+fn parse_block(node: Node, source: &[u8]) -> Expr {
+    let span = Span::from_node(&node);
+    let mut expressions: Vec<Expr> = Vec::new();
+
+    // Get all 'expr' children (intermediate expressions)
+    let mut cursor = node.walk();
+    for child in node.children_by_field_name("expr", &mut cursor) {
+        expressions.push(parse_expr(child, source));
+    }
+
+    // Get the 'last_expr' child (if present)
+    if let Some(last_child) = child_by_field(&node, "last_expr") {
+        expressions.push(parse_expr(last_child, source));
+    }
+
+    Expr::Block { expressions, span }
+}
+
 fn parse_expr(node: Node, source: &[u8]) -> Expr {
     match node.kind() {
         // Primary expressions
@@ -431,6 +454,7 @@ fn parse_expr(node: Node, source: &[u8]) -> Expr {
         "variable" => parse_variable(node, source),
         "fn_call" => parse_call(node, source),
         "list" => parse_list(node, source),
+        "block_expr" => parse_block(node, source),
         "if_expr" => parse_if(node, source),
 
         // Binary expressions
@@ -913,6 +937,17 @@ mod tests {
                     e1.len() == e2.len()
                         && e1.iter().zip(e2.iter()).all(|(a, b)| a.eq_ignore_spans(b))
                 }
+                (
+                    Expr::Block {
+                        expressions: e1, ..
+                    },
+                    Expr::Block {
+                        expressions: e2, ..
+                    },
+                ) => {
+                    e1.len() == e2.len()
+                        && e1.iter().zip(e2.iter()).all(|(a, b)| a.eq_ignore_spans(b))
+                }
                 _ => false,
             }
         }
@@ -1314,6 +1349,42 @@ mod tests {
                     }],
                     span: dummy_span(),
                 }],
+                span: dummy_span(),
+            },
+        ),
+        parse_block_simple: (
+            "main = { 1 + 2 };",
+            Expr::Block {
+                expressions: vec![Expr::Call {
+                    fn_name: "+".to_string(),
+                    is_infix: true,
+                    arguments: vec![
+                        Expr::Value(Value::Int(1), dummy_span()),
+                        Expr::Value(Value::Int(2), dummy_span()),
+                    ],
+                    span: dummy_span(),
+                }],
+                span: dummy_span(),
+            },
+        ),
+        parse_block_multiple: (
+            "main = { echo a; echo b; 42 };",
+            Expr::Block {
+                expressions: vec![
+                    Expr::Call {
+                        fn_name: "echo".to_string(),
+                        is_infix: false,
+                        arguments: vec![Expr::Value(Value::Str("a".to_string()), dummy_span())],
+                        span: dummy_span(),
+                    },
+                    Expr::Call {
+                        fn_name: "echo".to_string(),
+                        is_infix: false,
+                        arguments: vec![Expr::Value(Value::Str("b".to_string()), dummy_span())],
+                        span: dummy_span(),
+                    },
+                    Expr::Value(Value::Int(42), dummy_span()),
+                ],
                 span: dummy_span(),
             },
         ),

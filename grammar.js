@@ -163,7 +163,18 @@ module.exports = grammar({
       $.fn_call,
       $.variable,
       $.list,
+      $.block_expr,
       seq('(', $.expr, ')'),
+    ),
+
+    // Block expressions: { expr; expr; expr }
+    block_expr: $ => seq(
+      '{',
+      optional(seq(
+        repeat(seq(field('expr', $.expr), ';')),
+        field('last_expr', $.expr),
+      )),
+      '}',
     ),
 
     // If expressions
