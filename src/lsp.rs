@@ -497,7 +497,8 @@ impl LanguageServer for Backend {
             }
 
             // Look for builtin function
-            if let Some(signature_info) = get_builtin_signature(&fn_name, &self.builtin_signatures) {
+            if let Some(signature_info) = get_builtin_signature(&fn_name, &self.builtin_signatures)
+            {
                 return Ok(Some(SignatureHelp {
                     signatures: vec![signature_info],
                     active_signature: Some(0),
@@ -519,7 +520,8 @@ impl LanguageServer for Backend {
         };
 
         // Format the document
-        let formatted = crate::formatter::format_script(&doc.parse_result.source, &doc.parse_result);
+        let formatted =
+            crate::formatter::format_script(&doc.parse_result.source, &doc.parse_result);
 
         // Create a text edit that replaces the entire document
         let line_count = doc.parse_result.source.lines().count();
@@ -710,7 +712,10 @@ fn create_signature_info(signature: &crate::ast::LspSignature) -> SignatureInfor
 }
 
 /// Get signature information for a builtin function by querying the builtin signatures
-fn get_builtin_signature(fn_name: &str, builtin_sigs: &[LspBuiltinSignature]) -> Option<SignatureInformation> {
+fn get_builtin_signature(
+    fn_name: &str,
+    builtin_sigs: &[LspBuiltinSignature],
+) -> Option<SignatureInformation> {
     // Find all builtin signatures with this name
     let matching_sigs: Vec<_> = builtin_sigs
         .iter()
@@ -1454,10 +1459,7 @@ mod tests {
 
         // Verify the details contain function type information
         let map_completion = completions.iter().find(|c| c.label == "map").unwrap();
-        assert!(
-            map_completion.detail.is_some(),
-            "map should have detail"
-        );
+        assert!(map_completion.detail.is_some(), "map should have detail");
         let map_detail = map_completion.detail.as_ref().unwrap();
         assert!(
             map_detail.contains("fn(") && map_detail.contains("->"),
@@ -1507,10 +1509,7 @@ mod tests {
             "map signature should show function type: {}",
             map_sig.label
         );
-        assert!(
-            map_sig.parameters.is_some(),
-            "map should have parameters"
-        );
+        assert!(map_sig.parameters.is_some(), "map should have parameters");
 
         // Test filter signature
         let filter_sig = get_builtin_signature("filter", &builtin_sigs);

@@ -9,8 +9,7 @@ use std::fs;
 /// Extract all ```shady code blocks from README.md
 fn extract_shady_code_blocks() -> Vec<(usize, String)> {
     let readme_path = concat!(env!("CARGO_MANIFEST_DIR"), "/README.md");
-    let content = fs::read_to_string(readme_path)
-        .expect("Failed to read README.md");
+    let content = fs::read_to_string(readme_path).expect("Failed to read README.md");
 
     let mut blocks = Vec::new();
     let mut in_shady_block = false;
@@ -72,7 +71,10 @@ fn test_readme_code_blocks_parse() {
 
     for (line_num, code) in &blocks {
         if should_skip_block(code) {
-            println!("Skipping block at line {} (contains placeholders)", line_num);
+            println!(
+                "Skipping block at line {} (contains placeholders)",
+                line_num
+            );
             continue;
         }
 
@@ -141,9 +143,7 @@ fn test_readme_has_lambda_examples() {
     let blocks = extract_shady_code_blocks();
 
     // Ensure README contains lambda examples
-    let has_lambda = blocks.iter().any(|(_, code)| {
-        code.contains("lambda")
-    });
+    let has_lambda = blocks.iter().any(|(_, code)| code.contains("lambda"));
 
     assert!(
         has_lambda,
@@ -216,7 +216,8 @@ fn test_readme_code_blocks_are_formatted() {
     }
 
     if !unformatted_blocks.is_empty() {
-        let mut error_msg = String::from("\n\nThe following README code blocks are not properly formatted:\n");
+        let mut error_msg =
+            String::from("\n\nThe following README code blocks are not properly formatted:\n");
         for (line_num, original, formatted) in unformatted_blocks {
             error_msg.push_str(&format!(
                 "\n--- Block at line {} ---\nOriginal:\n{}\nFormatted:\n{}\n",

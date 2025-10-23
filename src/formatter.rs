@@ -2,7 +2,6 @@
 ///
 /// This module provides auto-formatting capabilities for Shady scripts,
 /// ensuring consistent code style across the codebase.
-
 use crate::ast::ParseResult;
 
 /// Configuration for the formatter
@@ -101,8 +100,7 @@ impl<'a> Formatter<'a> {
     }
 
     fn write_indent(&mut self) {
-        self.output
-            .push_str(&" ".repeat(self.current_indent));
+        self.output.push_str(&" ".repeat(self.current_indent));
     }
 
     fn current_line_length(&self) -> usize {
@@ -328,7 +326,8 @@ impl<'a> Formatter<'a> {
         let single_line = temp_formatter.output;
 
         // Check if single-line version would exceed max length
-        let would_fit = self.current_line_length() + single_line.len() <= self.config.max_line_length;
+        let would_fit =
+            self.current_line_length() + single_line.len() <= self.config.max_line_length;
 
         if would_fit {
             // Use single-line format
@@ -411,7 +410,9 @@ impl<'a> Formatter<'a> {
                 self.output.push_str(name);
 
                 let mut cursor = node.walk();
-                let args: Vec<_> = node.children_by_field_name("argument", &mut cursor).collect();
+                let args: Vec<_> = node
+                    .children_by_field_name("argument", &mut cursor)
+                    .collect();
 
                 // Check if this is 'seq' with a list argument
                 if name == "seq" && args.len() == 1 {

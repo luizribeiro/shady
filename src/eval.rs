@@ -284,13 +284,16 @@ pub fn eval_expr_with_type(
             let param_types: Vec<Type> = parameters.iter().map(|(_, typ)| typ.clone()).collect();
 
             // Determine return type (use provided or infer from expected_type or default to Any)
-            let ret_type = return_type.clone().or_else(|| {
-                // If expected_type is a function type, extract its return type
-                expected_type.and_then(|t| match t {
-                    Type::Fn(_, ret) => Some((**ret).clone()),
-                    _ => Some(t.clone()),
+            let ret_type = return_type
+                .clone()
+                .or_else(|| {
+                    // If expected_type is a function type, extract its return type
+                    expected_type.and_then(|t| match t {
+                        Type::Fn(_, ret) => Some((**ret).clone()),
+                        _ => Some(t.clone()),
+                    })
                 })
-            }).unwrap_or(Type::Any);
+                .unwrap_or(Type::Any);
 
             Ok(Value::Lambda(crate::types::Lambda {
                 parameters: param_names,
