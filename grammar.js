@@ -167,12 +167,13 @@ module.exports = grammar({
       seq('(', $.expr, ')'),
     ),
 
-    // Block expressions: { expr; expr; expr }
+    // Block expressions: { expr; expr; expr } or { expr; expr; expr; }
     block_expr: $ => seq(
       '{',
       optional(seq(
         repeat(seq(field('expr', $.expr), ';')),
         field('last_expr', $.expr),
+        optional(';'),  // Allow trailing semicolon
       )),
       '}',
     ),

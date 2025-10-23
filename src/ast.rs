@@ -1388,6 +1388,27 @@ mod tests {
                 span: dummy_span(),
             },
         ),
+        parse_block_with_trailing_semicolon: (
+            "main = { echo a; echo b; 42; };",
+            Expr::Block {
+                expressions: vec![
+                    Expr::Call {
+                        fn_name: "echo".to_string(),
+                        is_infix: false,
+                        arguments: vec![Expr::Value(Value::Str("a".to_string()), dummy_span())],
+                        span: dummy_span(),
+                    },
+                    Expr::Call {
+                        fn_name: "echo".to_string(),
+                        is_infix: false,
+                        arguments: vec![Expr::Value(Value::Str("b".to_string()), dummy_span())],
+                        span: dummy_span(),
+                    },
+                    Expr::Value(Value::Int(42), dummy_span()),
+                ],
+                span: dummy_span(),
+            },
+        ),
     }
 
     // Parameter validation tests
