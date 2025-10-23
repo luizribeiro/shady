@@ -108,19 +108,57 @@ impl ParseResult {
     pub fn function_at_offset(&self, offset: usize) -> Option<&LspSignature> {
         let mut node = self.node_at_offset(offset)?;
 
-        // Walk up the tree until we find a function_definition node
-        while node.kind() != "fn_definition" {
-            node = node.parent()?;
+        // Walk up the tree until we find a function_definition or ERROR node
+        loop {
+            match node.kind() {
+                "fn_definition" => {
+                    // Found a proper function definition - extract the name
+                    if let Some(name_node) = node.child_by_field_name("name") {
+                        if let Ok(fn_name) = name_node.utf8_text(self.source_bytes()) {
+                            return self
+                                .function_signatures
+                                .iter()
+                                .find(|f| f.fn_name == fn_name);
+                        }
+                    }
+                    return None;
+                }
+                "ERROR" => {
+                    // In error recovery mode - try to find which function this might be
+                    // by looking for fn_name nodes in the ERROR node's children
+                    for child in named_children(&node) {
+                        if child.kind() == "fn_name" {
+                            if let Ok(fn_name) = child.utf8_text(self.source_bytes()) {
+                                let found = self
+                                    .function_signatures
+                                    .iter()
+                                    .find(|f| f.fn_name == fn_name);
+                                if found.is_some() {
+                                    return found;
+                                }
+                            }
+                        }
+                    }
+                    // If we can't determine which function, but there's only one, return it
+                    if self.function_signatures.len() == 1 {
+                        return Some(&self.function_signatures[0]);
+                    }
+                    return None;
+                }
+                "program" => {
+                    // Reached the top without finding a function
+                    // As a fallback, if there's only one function in the file, return it
+                    if self.function_signatures.len() == 1 {
+                        return Some(&self.function_signatures[0]);
+                    }
+                    return None;
+                }
+                _ => {
+                    // Keep walking up
+                    node = node.parent()?;
+                }
+            }
         }
-
-        // Get the function name from the node
-        let name_node = node.child_by_field_name("name")?;
-        let fn_name = name_node.utf8_text(self.source_bytes()).ok()?;
-
-        // Find the corresponding function signature
-        self.function_signatures
-            .iter()
-            .find(|f| f.fn_name == fn_name)
     }
 }
 
@@ -582,6 +620,60 @@ fn parse_program(node: Node, source: &[u8]) -> Result<ProgramAST> {
     Ok(ProgramAST { fn_definitions })
 }
 
+/// Try to extract a function signature from an ERROR node for LSP purposes
+/// This is a best-effort extraction that doesn't validate the full syntax
+fn try_extract_signature_from_error(node: Node, source: &[u8]) -> Option<LspSignature> {
+    let mut fn_name = None;
+    let mut is_public = false;
+    let mut is_infix = false;
+    let mut parameters = Vec::new();
+    let mut return_type = Type::Any;
+
+    // Walk children looking for recognizable patterns
+    for child in named_children(&node) {
+        match child.kind() {
+            "fn_name" => {
+                if fn_name.is_none() {
+                    fn_name = Some(node_text(&child, source).to_string());
+                }
+            }
+            "parameter" => {
+                if let Ok(param) = parse_parameter(child, source) {
+                    parameters.push(LspParam {
+                        name: param.name,
+                        typ: param.typ,
+                    });
+                }
+            }
+            "typ" => {
+                // This might be the return type
+                return_type = parse_type(child, source);
+            }
+            _ => {}
+        }
+    }
+
+    // Check for "public" keyword in the source text around this node
+    let start = node.start_byte().saturating_sub(20);
+    let end = node.end_byte().min(source.len());
+    if let Ok(text) = std::str::from_utf8(&source[start..end]) {
+        if text.contains("public") {
+            is_public = true;
+        }
+        if text.contains("infix") {
+            is_infix = true;
+        }
+    }
+
+    fn_name.map(|name| LspSignature {
+        is_public,
+        is_infix,
+        fn_name: name,
+        parameters,
+        return_type,
+    })
+}
+
 /// Recursively find the first ERROR or MISSING node in the parse tree
 fn find_error_node<'a>(node: Node<'a>) -> Option<Node<'a>> {
     if node.kind() == "ERROR" || node.is_missing() {
@@ -670,7 +762,7 @@ pub fn parse_script_tolerant(text: &str) -> Result<(ParseResult, Vec<ShadyError>
     let ast = parse_program(root_node, text.as_bytes())?;
 
     // Convert to LSP-friendly signatures (without default values/expressions)
-    let function_signatures = ast
+    let mut function_signatures: Vec<LspSignature> = ast
         .fn_definitions
         .into_iter()
         .map(|fn_def| LspSignature {
@@ -689,6 +781,16 @@ pub fn parse_script_tolerant(text: &str) -> Result<(ParseResult, Vec<ShadyError>
             return_type: fn_def.signature.return_type,
         })
         .collect();
+
+    // For LSP purposes, also try to extract signatures from ERROR nodes
+    // This helps with completion in very incomplete code
+    for child in named_children(&root_node) {
+        if child.kind() == "ERROR" {
+            if let Some(sig) = try_extract_signature_from_error(child, text.as_bytes()) {
+                function_signatures.push(sig);
+            }
+        }
+    }
 
     Ok((
         ParseResult {

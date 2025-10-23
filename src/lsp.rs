@@ -923,3 +923,57 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod debug_tests {
+    use super::*;
+    use crate::ast::parse_script_tolerant;
+
+    #[test]
+    fn test_completion_incomplete_code_debug() {
+        let code = "public main $something: str = seq [\n  (echo $so";
+        let (parse_result, errors) = parse_script_tolerant(code).unwrap();
+
+        println!(
+            "Functions found: {}",
+            parse_result.function_signatures.len()
+        );
+        for sig in &parse_result.function_signatures {
+            println!(
+                "  Function: {} with {} parameters",
+                sig.fn_name,
+                sig.parameters.len()
+            );
+            for param in &sig.parameters {
+                println!("    - ${}: {}", param.name, param.typ);
+            }
+        }
+
+        println!("Parse errors: {}", errors.len());
+
+        // Check is_completing_variable
+        let position = Position::new(1, 11); // After "$so"
+        let completing = is_completing_variable(code, position);
+        println!(
+            "is_completing_variable at position {:?}: {}",
+            position, completing
+        );
+        assert!(completing, "Should detect variable completion");
+
+        // Check function_at_offset
+        let offset = code.len() - 1; // Near the end
+        println!("Looking for function at offset {}", offset);
+        match parse_result.function_at_offset(offset) {
+            Some(func) => {
+                println!("✅ Found function: {}", func.fn_name);
+                assert_eq!(func.fn_name, "main");
+                assert_eq!(func.parameters.len(), 1);
+                assert_eq!(func.parameters[0].name, "something");
+            }
+            None => {
+                println!("❌ No function found at offset!");
+                panic!("Should find 'main' function");
+            }
+        }
+    }
+}
