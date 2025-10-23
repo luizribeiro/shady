@@ -1,5 +1,8 @@
-use crate::ast::{parse_script_tolerant, ParseResult};
+use crate::ast::{parse_script, parse_script_tolerant, ParseResult};
+use crate::builtins;
 use crate::error::ShadyError;
+use crate::eval::BuiltinIndex;
+use crate::typecheck::TypeChecker;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -27,6 +30,71 @@ impl Backend {
         }
     }
 
+    /// Convert a ShadyError to an LSP Diagnostic
+    fn convert_error_to_diagnostic(&self, error: &ShadyError, text: &str) -> Diagnostic {
+        match error {
+            ShadyError::TypeMismatch {
+                expected,
+                actual,
+                span,
+            } => {
+                let range = span_to_range(text, span);
+                Diagnostic {
+                    range,
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    source: Some("shady-typecheck".to_string()),
+                    message: format!("Type mismatch: expected {}, got {}", expected, actual),
+                    ..Default::default()
+                }
+            }
+            ShadyError::VariableNotFound { name, span } => {
+                let range = span_to_range(text, span);
+                Diagnostic {
+                    range,
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    source: Some("shady-typecheck".to_string()),
+                    message: format!("Variable '{}' not found", name),
+                    ..Default::default()
+                }
+            }
+            ShadyError::FunctionSignatureMismatch {
+                name,
+                arg_types,
+                span,
+            } => {
+                let range = span_to_range(text, span);
+                Diagnostic {
+                    range,
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    source: Some("shady-typecheck".to_string()),
+                    message: format!("Function '{}' signature mismatch: {}", name, arg_types),
+                    ..Default::default()
+                }
+            }
+            ShadyError::EmptyListNeedsType { span } => {
+                let range = span_to_range(text, span);
+                Diagnostic {
+                    range,
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    source: Some("shady-typecheck".to_string()),
+                    message: "Empty list requires type context (e.g., pass to typed function)"
+                        .to_string(),
+                    ..Default::default()
+                }
+            }
+            other_err => {
+                // For other errors, show at the beginning of the file
+                Diagnostic {
+                    range: Range::new(Position::new(0, 0), Position::new(0, 1)),
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    source: Some("shady-typecheck".to_string()),
+                    message: format!("{:?}", other_err),
+                    ..Default::default()
+                }
+            }
+        }
+    }
+
     /// Parse a document and generate diagnostics
     async fn parse_and_diagnose(&self, uri: &Url, text: &str) {
         let mut diagnostics = Vec::new();
@@ -35,7 +103,7 @@ impl Backend {
         match parse_script_tolerant(text) {
             Ok((parse_result, errors)) => {
                 // Convert all parse errors to LSP diagnostics
-                for err in errors {
+                for err in &errors {
                     let diagnostic = match err {
                         ShadyError::ParseErrorSimple { message, span } => {
                             let start_pos = ts_point_to_position(
@@ -60,7 +128,7 @@ impl Backend {
                                 range: Range::new(start_pos, end_pos),
                                 severity: Some(DiagnosticSeverity::ERROR),
                                 source: Some("shady".to_string()),
-                                message,
+                                message: message.clone(),
                                 ..Default::default()
                             }
                         }
@@ -77,6 +145,24 @@ impl Backend {
                     };
 
                     diagnostics.push(diagnostic);
+                }
+
+                // If there are no parse errors, run type checking
+                if errors.is_empty() {
+                    if let Ok(program) = parse_script(text) {
+                        // Build builtins index for type checking
+                        #[allow(clippy::mutable_key_type)]
+                        let mut builtins: BuiltinIndex = HashMap::new();
+                        builtins::setup_builtins(&mut builtins);
+
+                        // Run type checker
+                        let checker = TypeChecker::new(&program, &builtins);
+                        if let Err(type_error) = checker.typecheck_program(&program) {
+                            // Convert type checking error to diagnostic
+                            let diagnostic = self.convert_error_to_diagnostic(&type_error, text);
+                            diagnostics.push(diagnostic);
+                        }
+                    }
                 }
 
                 // Store the parse result
@@ -410,6 +496,42 @@ fn lsp_position_to_offset(text: &str, position: Position) -> usize {
     }
 
     offset
+}
+
+/// Convert a miette SourceSpan to an LSP Range
+fn span_to_range(text: &str, span: &miette::SourceSpan) -> Range {
+    let start_offset = span.offset();
+    let end_offset = start_offset + span.len();
+
+    // Convert byte offsets to line/column positions
+    let mut line = 0;
+    let mut col = 0;
+    let mut start_pos = Position::new(0, 0);
+    let mut end_pos = Position::new(0, 0);
+
+    for (i, ch) in text.char_indices() {
+        if i == start_offset {
+            start_pos = Position::new(line, col);
+        }
+        if i == end_offset {
+            end_pos = Position::new(line, col);
+            break;
+        }
+
+        if ch == '\n' {
+            line += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+    }
+
+    // If we reached the end without finding end_offset, use current position
+    if end_offset >= text.len() {
+        end_pos = Position::new(line, col);
+    }
+
+    Range::new(start_pos, end_pos)
 }
 
 /// Find the definition location for a function

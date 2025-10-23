@@ -5,6 +5,7 @@ pub mod builtins;
 pub mod cli;
 pub mod error;
 pub mod eval;
+pub mod typecheck;
 pub mod types;
 
 // LSP module is only used by the shady-lsp binary

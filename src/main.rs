@@ -1,5 +1,5 @@
 use clap::Parser;
-use shady::{ast, cli, eval};
+use shady::{ast, cli, eval, typecheck};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -81,7 +81,16 @@ fn main() {
 
     let filename = args.filename.clone();
     let source_clone = source.clone();
-    let context = eval::build_context(filename.clone(), source, program);
+    let context = eval::build_context(filename.clone(), source.clone(), program);
+
+    // Run type checking before execution
+    let checker = typecheck::TypeChecker::new(&context.program, &context.builtins);
+    if let Err(e) = checker.typecheck_program(&context.program) {
+        let report = miette::Report::new(e)
+            .with_source_code(miette::NamedSource::new(&filename, source_clone));
+        eprintln!("{:?}", report);
+        std::process::exit(1);
+    }
 
     let mut script_args = vec![args.filename.clone()];
     script_args.extend(args.args);

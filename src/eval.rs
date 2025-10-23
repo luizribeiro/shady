@@ -105,7 +105,7 @@ fn find_mismatched_arg_index(definition: &FnSignature, call: &FnSignature) -> Op
 pub struct ShadyContext {
     pub filename: String,
     pub program: ProgramAST,
-    builtins: BuiltinIndex,
+    pub builtins: BuiltinIndex,
     pub limits: ResourceLimits,
     process_count: RefCell<usize>,
 }
