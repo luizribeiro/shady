@@ -9,12 +9,34 @@ struct ShadyArgs {
 
     filename: String,
 
-    #[arg(allow_hyphen_values = true)]
+    #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
     args: Vec<String>,
 }
 
 fn main() {
-    let args = ShadyArgs::parse();
+    // Special handling: if args contain a filename followed by --help or -h,
+    // pass --help through to the script instead of showing interpreter help
+    let raw_args: Vec<String> = std::env::args().collect();
+    let should_passthrough_help = raw_args.len() >= 3
+        && !raw_args[1].starts_with('-')
+        && (raw_args[2] == "--help" || raw_args[2] == "-h");
+
+    let args = if should_passthrough_help {
+        // Parse without the --help so it doesn't trigger interpreter help
+        match ShadyArgs::try_parse_from(vec![raw_args[0].clone(), raw_args[1].clone()]) {
+            Ok(mut parsed) => {
+                // Add the remaining args (including --help) to script args
+                parsed.args = raw_args[2..].to_vec();
+                parsed
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        ShadyArgs::parse()
+    };
 
     let (source, program) = if args.filename == "-" {
         use std::io::Read;

@@ -22,7 +22,7 @@ fn string_to_static_str(s: String) -> &'static str {
 
 fn get_command(context: &ShadyContext) -> clap::Command {
     let mut cmd = command!()
-        .bin_name(format!("shady {}", context.filename))
+        .bin_name(&context.filename)
         .args_conflicts_with_subcommands(true);
 
     // Find the main function if it exists
@@ -83,9 +83,22 @@ fn get_command(context: &ShadyContext) -> clap::Command {
 
 pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
     let cmd = get_command(context);
-    let matches = cmd
-        .try_get_matches_from(script_args)
-        .map_err(|e| crate::error::ShadyError::EvalError(e.to_string()))?;
+    let matches = match cmd.try_get_matches_from(script_args) {
+        Ok(m) => m,
+        Err(e) => {
+            // Handle help and version specially - these should print and exit successfully
+            use clap::error::ErrorKind;
+            match e.kind() {
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
+                    print!("{}", e);
+                    std::process::exit(0);
+                }
+                _ => {
+                    return Err(crate::error::ShadyError::EvalError(e.to_string()));
+                }
+            }
+        }
+    };
 
     let mut vars = HashMap::new();
     let subcmd_name = matches.subcommand_name().unwrap_or("main");
@@ -311,6 +324,111 @@ mod tests {
         assert!(
             result.is_ok(),
             "Should work with non-Proc return values (no auto-exec needed)"
+        );
+    }
+
+    // Help display tests
+    #[test]
+    fn test_script_help_displays_subcommands() {
+        // Test that ./script.shady --help shows the script's subcommands
+        let code = r#"
+            public main $arg: str = echo $arg;
+            public greet $name: str = echo $name;
+        "#;
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("./test.shady".to_string(), code.to_string(), ast);
+
+        let mut cmd = get_command(&context);
+        let help_output = cmd.render_help().to_string();
+
+        // Should show both subcommands
+        assert!(help_output.contains("main"), "Help should show main command");
+        assert!(
+            help_output.contains("greet"),
+            "Help should show greet command"
+        );
+        // Should show the script name, not "shady <filename>"
+        assert!(
+            help_output.contains("./test.shady"),
+            "Help should show script name"
+        );
+        assert!(
+            !help_output.contains("shady ./test.shady"),
+            "Help should not show 'shady' prefix"
+        );
+    }
+
+    #[test]
+    fn test_subcommand_help_shows_arguments() {
+        // Test that subcommand help shows the correct arguments
+        let code = "public greet $name: str $count: int = echo $name;";
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("./test.shady".to_string(), code.to_string(), ast);
+
+        let mut cmd = get_command(&context);
+        let subcommand = cmd.find_subcommand("greet").unwrap();
+        let help_output = subcommand.clone().render_help().to_string();
+
+        assert!(
+            help_output.contains("<name>"),
+            "Should show name argument"
+        );
+        assert!(
+            help_output.contains("<count>"),
+            "Should show count argument"
+        );
+    }
+
+    #[test]
+    fn test_main_help_shows_arguments() {
+        // Test that main subcommand help works
+        let code = "public main $something: str $bar: int = echo $something;";
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("./test.shady".to_string(), code.to_string(), ast);
+
+        let mut cmd = get_command(&context);
+        let subcommand = cmd.find_subcommand("main").unwrap();
+        let help_output = subcommand.clone().render_help().to_string();
+
+        assert!(
+            help_output.contains("<something>"),
+            "Should show something argument"
+        );
+        assert!(help_output.contains("<bar>"), "Should show bar argument");
+    }
+
+    #[test]
+    fn test_help_with_default_values() {
+        // Test that help correctly shows optional arguments with defaults
+        let code = r#"public greet $name: str ("World") = echo $name;"#;
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("./test.shady".to_string(), code.to_string(), ast);
+
+        let mut cmd = get_command(&context);
+        let subcommand = cmd.find_subcommand("greet").unwrap();
+        let help_output = subcommand.clone().render_help().to_string();
+
+        // Should show the argument (exact format may vary by clap version)
+        assert!(
+            help_output.contains("name") || help_output.contains("<name>"),
+            "Should show name argument"
+        );
+    }
+
+    #[test]
+    fn test_help_with_options() {
+        // Test that help shows options with -- prefix
+        let code = r#"public run $verbose: bool (false, option) = echo "test";"#;
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("./test.shady".to_string(), code.to_string(), ast);
+
+        let mut cmd = get_command(&context);
+        let subcommand = cmd.find_subcommand("run").unwrap();
+        let help_output = subcommand.clone().render_help().to_string();
+
+        assert!(
+            help_output.contains("--verbose"),
+            "Should show --verbose option"
         );
     }
 }
