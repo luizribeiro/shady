@@ -104,7 +104,7 @@ impl<'a> Formatter<'a> {
         let mut cursor = node.walk();
 
         // Check for 'public' keyword
-        if let Some(public) = node.child_by_field_name("public") {
+        if let Some(_public) = node.child_by_field_name("public") {
             self.output.push_str("public ");
         }
 
@@ -175,7 +175,7 @@ impl<'a> Formatter<'a> {
 
     fn format_expression(&mut self, node: &tree_sitter::Node, is_nested: bool) {
         match node.kind() {
-            "value" | "int" | "str" | "bool" => {
+            "value" | "int" | "str" | "bool" | "token" | "fn_name" => {
                 if let Ok(text) = node.utf8_text(self.source_bytes) {
                     self.output.push_str(text);
                 }
@@ -206,17 +206,32 @@ impl<'a> Formatter<'a> {
             "lambda_expr" => {
                 self.format_lambda_expr(node);
             }
-            "fn_arg" | "unquoted_str_arg" => {
-                // fn_arg is a wrapper - format its child
-                if let Some(child) = node.named_child(0) {
+            "fn_arg" => {
+                // fn_arg is a wrapper - unwrap and format the content
+                // Walk through all children and format them
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    if !child.is_named() {
+                        // Skip unnamed nodes like parentheses
+                        continue;
+                    }
                     self.format_expression(&child, is_nested);
-                } else if let Ok(text) = node.utf8_text(self.source_bytes) {
+                }
+            }
+            "unquoted_str_arg" => {
+                if let Ok(text) = node.utf8_text(self.source_bytes) {
                     self.output.push_str(text);
                 }
             }
             _ => {
-                // Fallback: just output the text as-is
-                if let Ok(text) = node.utf8_text(self.source_bytes) {
+                // For unknown nodes, try to format their children
+                if node.named_child_count() > 0 {
+                    let mut cursor = node.walk();
+                    for child in node.named_children(&mut cursor) {
+                        self.format_expression(&child, is_nested);
+                    }
+                } else if let Ok(text) = node.utf8_text(self.source_bytes) {
+                    // Fallback: just output the text as-is
                     self.output.push_str(text);
                 }
             }
@@ -292,7 +307,7 @@ impl<'a> Formatter<'a> {
     }
 
     fn format_fn_call(&mut self, node: &tree_sitter::Node) {
-        // Special handling for 'seq' to format its list argument nicely
+        // Get function name
         if let Some(name_node) = node.child_by_field_name("name") {
             if let Ok(name) = name_node.utf8_text(self.source_bytes) {
                 self.output.push_str(name);
@@ -300,32 +315,81 @@ impl<'a> Formatter<'a> {
                 let mut cursor = node.walk();
                 let args: Vec<_> = node.children_by_field_name("argument", &mut cursor).collect();
 
-                // Check if this is 'seq' with a list
+                // Check if this is 'seq' with a list argument
                 if name == "seq" && args.len() == 1 {
-                    // Check if the argument is a list by looking at its kind
-                    if args[0].kind() == "list" || args[0].child(0).map(|c| c.kind()) == Some("list") {
-                        self.output.push(' ');
-                        self.format_seq_list(&args[0]);
+                    // Look for list inside the argument and format it specially
+                    if self.format_seq_if_list(&args[0]) {
                         return;
                     }
                 }
 
-                // Regular function call - format all arguments
+                // Regular function call - format all arguments with proper spacing
                 for arg in args {
                     self.output.push(' ');
-                    // Check if argument is wrapped in parens (for nested expressions)
-                    if arg.child_count() == 1 && arg.child(0).map(|c| c.kind()) == Some("(") {
-                        // Parenthesized expression - format the inner content
-                        if let Some(inner) = arg.child(1) {
-                            self.output.push('(');
-                            self.format_expression(&inner, false);
-                            self.output.push(')');
-                        }
-                    } else {
-                        self.format_expression(&arg, false);
+                    self.format_argument(&arg);
+                }
+            }
+        }
+    }
+
+    fn format_seq_if_list(&mut self, node: &tree_sitter::Node) -> bool {
+        // Try to find and format a list node for seq
+        if node.kind() == "list" {
+            self.output.push(' ');
+            self.format_seq_list(node);
+            return true;
+        }
+        // Check if it's an fn_arg wrapper
+        if node.kind() == "fn_arg" {
+            for i in 0..node.child_count() {
+                if let Some(child) = node.child(i) {
+                    if child.kind() == "list" {
+                        self.output.push(' ');
+                        self.format_seq_list(&child);
+                        return true;
                     }
                 }
             }
+        }
+        false
+    }
+
+    fn format_argument(&mut self, node: &tree_sitter::Node) {
+        // Handle parenthesized expressions
+        if node.kind() == "fn_arg" {
+            // Check if this contains a parenthesized expression
+            let mut has_parens = false;
+            let mut inner_expr = None;
+
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                match child.kind() {
+                    "(" => {
+                        has_parens = true;
+                        self.output.push('(');
+                    }
+                    ")" => {
+                        self.output.push(')');
+                    }
+                    _ if child.is_named() => {
+                        inner_expr = Some(child);
+                    }
+                    _ => {}
+                }
+            }
+
+            if !has_parens {
+                // No parens, just format the inner expression
+                if let Some(expr) = inner_expr {
+                    self.format_expression(&expr, false);
+                }
+            } else if let Some(expr) = inner_expr {
+                // Had parens, format the expression inside them
+                self.format_expression(&expr, true);
+            }
+        } else {
+            // Not wrapped in fn_arg, format directly
+            self.format_expression(node, false);
         }
     }
 
@@ -427,7 +491,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix function argument spacing
     fn test_format_function_with_params() {
         let code = "greet $name: str = echo $name;";
         let (parse_result, _) = parse_script_tolerant(code).unwrap();
@@ -436,7 +499,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix seq block formatting
     fn test_format_seq_block() {
         let code = "public main = seq [echo \"a\"; echo \"b\";];";
         let (parse_result, _) = parse_script_tolerant(code).unwrap();
@@ -447,7 +509,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix if expression formatting
     fn test_format_if_expr() {
         let code = "check $x: int = if ($x > 10) \"big\" else \"small\";";
         let (parse_result, _) = parse_script_tolerant(code).unwrap();
@@ -458,12 +519,22 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix lambda formatting
     fn test_format_lambda() {
         let code = "public double-all $nums: [int] = map (lambda $x -> $x * 2) $nums;";
         let (parse_result, _) = parse_script_tolerant(code).unwrap();
         let formatted = format_script(code, &parse_result);
         assert!(formatted.contains("lambda $x ->"));
         assert!(formatted.contains("map"));
+    }
+
+    #[test]
+    fn test_format_block_multiline() {
+        let code = "public main $name: str -> proc =    {echo \"Hello {$name}!\";};";
+        let (parse_result, _) = parse_script_tolerant(code).unwrap();
+        let formatted = format_script(code, &parse_result);
+        // Should have proper multi-line formatting
+        assert!(formatted.contains("{\n"));
+        assert!(formatted.contains("  echo"));
+        assert!(formatted.contains(";\n}"));
     }
 }
