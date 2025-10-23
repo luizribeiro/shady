@@ -114,49 +114,49 @@ mod test {
 
     #[test]
     fn test_int_eq_int() {
-        assert_eq!(int_eq_int(1, 1), true);
-        assert_eq!(int_eq_int(1, 2), false);
-        assert_eq!(int_eq_int(2, 1), false);
-        assert_eq!(int_eq_int(2, 2), true);
+        assert!(int_eq_int(1, 1));
+        assert!(!int_eq_int(1, 2));
+        assert!(!int_eq_int(2, 1));
+        assert!(int_eq_int(2, 2));
     }
 
     #[test]
     fn test_int_neq_int() {
-        assert_eq!(int_neq_int(1, 1), false);
-        assert_eq!(int_neq_int(1, 2), true);
-        assert_eq!(int_neq_int(2, 1), true);
-        assert_eq!(int_neq_int(2, 2), false);
+        assert!(!int_neq_int(1, 1));
+        assert!(int_neq_int(1, 2));
+        assert!(int_neq_int(2, 1));
+        assert!(!int_neq_int(2, 2));
     }
 
     #[test]
     fn test_int_gt_int() {
-        assert_eq!(int_gt_int(1, 1), false);
-        assert_eq!(int_gt_int(1, 2), false);
-        assert_eq!(int_gt_int(2, 1), true);
-        assert_eq!(int_gt_int(2, 2), false);
+        assert!(!int_gt_int(1, 1));
+        assert!(!int_gt_int(1, 2));
+        assert!(int_gt_int(2, 1));
+        assert!(!int_gt_int(2, 2));
     }
 
     #[test]
     fn test_int_gte_int() {
-        assert_eq!(int_gte_int(1, 1), true);
-        assert_eq!(int_gte_int(1, 2), false);
-        assert_eq!(int_gte_int(2, 1), true);
-        assert_eq!(int_gte_int(2, 2), true);
+        assert!(int_gte_int(1, 1));
+        assert!(!int_gte_int(1, 2));
+        assert!(int_gte_int(2, 1));
+        assert!(int_gte_int(2, 2));
     }
 
     #[test]
     fn test_int_lt_int() {
-        assert_eq!(int_lt_int(1, 1), false);
-        assert_eq!(int_lt_int(1, 2), true);
-        assert_eq!(int_lt_int(2, 1), false);
-        assert_eq!(int_lt_int(2, 2), false);
+        assert!(!int_lt_int(1, 1));
+        assert!(int_lt_int(1, 2));
+        assert!(!int_lt_int(2, 1));
+        assert!(!int_lt_int(2, 2));
     }
 
     #[test]
     fn test_int_lte_int() {
-        assert_eq!(int_lte_int(1, 1), true);
-        assert_eq!(int_lte_int(1, 2), true);
-        assert_eq!(int_lte_int(2, 1), false);
-        assert_eq!(int_lte_int(2, 2), true);
+        assert!(int_lte_int(1, 1));
+        assert!(int_lte_int(1, 2));
+        assert!(!int_lte_int(2, 1));
+        assert!(int_lte_int(2, 2));
     }
 }

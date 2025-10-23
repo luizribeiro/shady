@@ -31,14 +31,14 @@ mod test {
 
     #[test]
     fn test_str_eq_str() {
-        assert_eq!(str_eq_str("a".to_string(), "a".to_string()), true);
-        assert_eq!(str_eq_str("a".to_string(), "b".to_string()), false);
+        assert!(str_eq_str("a".to_string(), "a".to_string()));
+        assert!(!str_eq_str("a".to_string(), "b".to_string()));
     }
 
     #[test]
     fn test_str_neq_str() {
-        assert_eq!(str_neq_str("a".to_string(), "a".to_string()), false);
-        assert_eq!(str_neq_str("a".to_string(), "b".to_string()), true);
+        assert!(!str_neq_str("a".to_string(), "a".to_string()));
+        assert!(str_neq_str("a".to_string(), "b".to_string()));
     }
 
     #[test]
