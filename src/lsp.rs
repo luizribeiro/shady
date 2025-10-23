@@ -758,6 +758,68 @@ mod tests {
     }
 
     #[test]
+    fn test_variable_completion_in_incomplete_code() {
+        // This is the exact example from the user's bug report
+        let code = "public main $something: str = seq [\n  (echo $so";
+        let (parse_result, _errors) = parse_script_tolerant(code).unwrap();
+
+        // Verify the function signature was extracted despite the incomplete code
+        assert_eq!(
+            parse_result.function_signatures.len(),
+            1,
+            "Should extract function signature from incomplete code"
+        );
+        let func_sig = &parse_result.function_signatures[0];
+        assert_eq!(func_sig.fn_name, "main");
+        assert_eq!(func_sig.parameters.len(), 1);
+        assert_eq!(func_sig.parameters[0].name, "something");
+
+        // Position at the end: "...echo $so|"
+        let position = Position::new(1, 11);
+
+        // Verify we're completing a variable
+        assert!(
+            is_completing_variable(code, position),
+            "Should detect variable completion after $so"
+        );
+
+        // Verify function_at_offset finds the function
+        let offset = lsp_position_to_offset(code, position);
+        let found_func = parse_result.function_at_offset(offset);
+        assert!(
+            found_func.is_some(),
+            "Should find function at cursor position"
+        );
+        assert_eq!(found_func.unwrap().fn_name, "main");
+
+        // Simulate what the LSP completion handler would do
+        let mut completions = Vec::new();
+        for param in &func_sig.parameters {
+            completions.push(CompletionItem {
+                label: format!("${}", param.name),
+                kind: Some(CompletionItemKind::VARIABLE),
+                detail: Some(format!("{}", param.typ)),
+                documentation: Some(Documentation::String(format!(
+                    "Parameter of function '{}'",
+                    func_sig.fn_name
+                ))),
+                insert_text: Some(param.name.clone()),
+                ..Default::default()
+            });
+        }
+
+        // Verify we get the $something completion
+        assert_eq!(
+            completions.len(),
+            1,
+            "Should have one variable completion"
+        );
+        assert_eq!(completions[0].label, "$something");
+        assert_eq!(completions[0].insert_text, Some("something".to_string()));
+        assert_eq!(completions[0].detail, Some("str".to_string()));
+    }
+
+    #[test]
     fn test_extract_function_name_at_cursor() {
         // Simple function call
         assert_eq!(
