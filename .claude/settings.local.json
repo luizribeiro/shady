@@ -4,7 +4,14 @@
       "Bash(cargo build:*)",
       "Bash(cargo test:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$(cat <<''EOF''\nAdd Go to Definition support to LSP server\n\nImplements the ability to jump to function definitions when clicking on\nfunction names in the editor. This works for user-defined functions in\nthe current file.\n\nNew features:\n- Added definition_provider capability to LSP server\n- Implemented goto_definition handler\n- Added helper functions:\n  - position_to_offset: Convert LSP positions to byte offsets\n  - find_identifier_at_position: Find identifier at cursor\n  - find_function_call_definition: Locate function definitions\n- Added 9 new tests for Go to Definition functionality\n\nAll 60 tests passing.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd Go to Definition support to LSP server\n\nImplements the ability to jump to function definitions when clicking on\nfunction names in the editor. This works for user-defined functions in\nthe current file.\n\nNew features:\n- Added definition_provider capability to LSP server\n- Implemented goto_definition handler\n- Added helper functions:\n  - position_to_offset: Convert LSP positions to byte offsets\n  - find_identifier_at_position: Find identifier at cursor\n  - find_function_call_definition: Locate function definitions\n- Added 9 new tests for Go to Definition functionality\n\nAll 60 tests passing.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(cargo run:*)",
+      "Bash(npx tree-sitter:*)",
+      "Bash(npx tree-sitter parse:*)",
+      "Bash(tee:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

@@ -16,16 +16,12 @@ lazy_static! {
 struct Builtin {
     fn_name: String,
     is_infix: bool,
-    // TODO: implement support for varargs
-    #[allow(dead_code)]
-    is_vargs: bool,
 }
 
 impl Builtin {
     fn new(orig_fun: &ItemFn, macro_args: &Vec<NestedMeta>) -> Self {
         let mut fn_name = orig_fun.sig.ident.to_string();
         let mut is_infix = false;
-        let mut is_vargs = false;
 
         for arg in macro_args {
             match arg {
@@ -37,7 +33,6 @@ impl Builtin {
                             _ => panic!("Unsupported literal type"),
                         };
                         match name.as_str() {
-                            "vargs" => is_vargs = value,
                             "infix" => is_infix = value,
                             _ => panic!("Unsupported attribute"),
                         }
@@ -54,7 +49,6 @@ impl Builtin {
         Builtin {
             fn_name,
             is_infix,
-            is_vargs,
         }
     }
 }

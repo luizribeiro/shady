@@ -5,7 +5,6 @@ use thiserror::Error;
 /// Main error type for Shady interpreter
 #[derive(Error, Debug, Diagnostic)]
 pub enum ShadyError {
-    #[allow(dead_code)]
     #[error("Variable '{name}' not found")]
     #[diagnostic(
         code(shady::eval::variable_not_found),
@@ -17,7 +16,6 @@ pub enum ShadyError {
         span: SourceSpan,
     },
 
-    #[allow(dead_code)]
     #[error("Type mismatch: expected {expected}, got {actual}")]
     #[diagnostic(
         code(shady::types::mismatch),
@@ -30,12 +28,6 @@ pub enum ShadyError {
         span: SourceSpan,
     },
 
-    // Reserved for future structured parse errors with line information
-    #[allow(dead_code)]
-    #[error("Parse error at line {line}: {message}")]
-    #[diagnostic(code(shady::parse::error))]
-    ParseError { line: usize, message: String },
-
     #[error("Parse error: {message}")]
     #[diagnostic(
         code(shady::parse::syntax),
@@ -47,7 +39,6 @@ pub enum ShadyError {
         span: SourceSpan,
     },
 
-    #[allow(dead_code)]
     #[error("Function '{name}' not found")]
     #[diagnostic(
         code(shady::eval::function_not_found),
@@ -59,7 +50,6 @@ pub enum ShadyError {
         span: SourceSpan,
     },
 
-    #[allow(dead_code)]
     #[error("Function '{name}' found but no matching signature for argument types: {arg_types}")]
     #[diagnostic(
         code(shady::eval::signature_mismatch),
@@ -76,12 +66,10 @@ pub enum ShadyError {
     #[diagnostic(code(shady::process::exec_failed))]
     ProcessError(#[from] std::io::Error),
 
-    #[allow(dead_code)]
     #[error("I/O error: {0}")]
     #[diagnostic(code(shady::io::error))]
     IoError(String),
 
-    #[allow(dead_code)]
     #[error("Empty lists require type annotation or context to infer type")]
     #[diagnostic(
         code(shady::types::empty_list),
@@ -110,13 +98,6 @@ pub enum ShadyError {
         actual: Type,
     },
 
-    // Reserved for future CLI-specific errors (currently using MissingCliArgument instead)
-    #[allow(dead_code)]
-    #[error("CLI argument error: {0}")]
-    #[diagnostic(code(shady::cli::argument_error))]
-    CliError(String),
-
-    #[allow(dead_code)]
     #[error("Thread panicked during execution")]
     #[diagnostic(
         code(shady::runtime::thread_panic),
@@ -124,21 +105,10 @@ pub enum ShadyError {
     )]
     ThreadPanic,
 
-    // Reserved for future timeout functionality
-    #[allow(dead_code)]
-    #[error("Process timeout")]
-    #[diagnostic(
-        code(shady::process::timeout),
-        help("The process took too long to complete. Consider increasing the timeout or checking for infinite loops.")
-    )]
-    ProcessTimeout,
-
-    #[allow(dead_code)]
     #[error("Invalid conversion from {from} to {to}")]
     #[diagnostic(code(shady::types::invalid_conversion))]
     InvalidConversion { from: String, to: String },
 
-    #[allow(dead_code)]
     #[error("Pipe clone failed: {0}")]
     #[diagnostic(
         code(shady::process::pipe_clone_failed),
@@ -146,7 +116,6 @@ pub enum ShadyError {
     )]
     PipeCloneError(String),
 
-    #[allow(dead_code)]
     #[error("Missing required CLI argument: {0}")]
     #[diagnostic(
         code(shady::cli::missing_argument),
@@ -154,7 +123,6 @@ pub enum ShadyError {
     )]
     MissingCliArgument(String),
 
-    #[allow(dead_code)]
     #[error("Recursion depth limit exceeded (max: {0})")]
     #[diagnostic(
         code(shady::runtime::recursion_limit),
@@ -162,7 +130,6 @@ pub enum ShadyError {
     )]
     RecursionLimitExceeded(usize),
 
-    #[allow(dead_code)]
     #[error("Process limit exceeded (max: {0})")]
     #[diagnostic(
         code(shady::runtime::process_limit),
@@ -170,7 +137,6 @@ pub enum ShadyError {
     )]
     ProcessLimitExceeded(usize),
 
-    #[allow(dead_code)]
     #[error("Evaluation error: {0}")]
     #[diagnostic(code(shady::eval::error))]
     EvalError(String),

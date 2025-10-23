@@ -28,7 +28,6 @@ impl Span {
     }
 
     /// Convert to miette's SourceSpan for error reporting
-    #[allow(dead_code)]
     pub fn to_source_span(&self) -> SourceSpan {
         SourceSpan::new(self.offset.into(), self.length)
     }
@@ -134,7 +133,6 @@ pub enum Expr {
 
 impl Expr {
     /// Get the source span for this expression
-    #[allow(dead_code)]
     pub fn span(&self) -> &Span {
         match self {
             Expr::Value(_, span) => span,

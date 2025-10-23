@@ -103,10 +103,6 @@ fn find_mismatched_arg_index(definition: &FnSignature, call: &FnSignature) -> Op
 
 pub struct ShadyContext {
     pub filename: String,
-    // Source code is stored for potential future use in error reporting
-    // Currently, main.rs handles source code attachment to errors separately
-    #[allow(dead_code)]
-    pub source: String,
     pub program: ProgramAST,
     builtins: BuiltinIndex,
     pub limits: ResourceLimits,
@@ -119,13 +115,12 @@ pub struct LocalContext {
     pub depth: usize,
 }
 
-pub fn build_context(filename: String, source: String, program: ProgramAST) -> ShadyContext {
-    build_context_with_limits(filename, source, program, ResourceLimits::default())
+pub fn build_context(filename: String, _source: String, program: ProgramAST) -> ShadyContext {
+    build_context_with_limits(filename, program, ResourceLimits::default())
 }
 
 pub fn build_context_with_limits(
     filename: String,
-    source: String,
     program: ProgramAST,
     limits: ResourceLimits,
 ) -> ShadyContext {
@@ -136,7 +131,6 @@ pub fn build_context_with_limits(
 
     ShadyContext {
         filename,
-        source,
         program,
         builtins,
         limits,
@@ -864,12 +858,7 @@ mod tests {
             max_recursion_depth: 10,
             max_process_count: 100,
         };
-        let context = build_context_with_limits(
-            "test.shady".to_string(),
-            script.to_string(),
-            program,
-            limits,
-        );
+        let context = build_context_with_limits("test.shady".to_string(), program, limits);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -902,12 +891,7 @@ mod tests {
             max_recursion_depth: 1000,
             max_process_count: 5,
         };
-        let context = build_context_with_limits(
-            "test.shady".to_string(),
-            script.to_string(),
-            program,
-            limits,
-        );
+        let context = build_context_with_limits("test.shady".to_string(), program, limits);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
@@ -940,12 +924,7 @@ mod tests {
             max_recursion_depth: 50,
             max_process_count: 100,
         };
-        let context = build_context_with_limits(
-            "test.shady".to_string(),
-            script.to_string(),
-            program,
-            limits,
-        );
+        let context = build_context_with_limits("test.shady".to_string(), program, limits);
         let fun = get_fn_by_name(&context.program, "main").unwrap();
         let local_context = LocalContext {
             vars: HashMap::new(),
