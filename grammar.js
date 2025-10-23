@@ -19,7 +19,6 @@ module.exports = grammar({
 
   extras: $ => [
     /\s/,
-    $.comment,
   ],
 
   word: $ => $.token,
@@ -30,9 +29,10 @@ module.exports = grammar({
   ],
 
   rules: {
-    program: $ => seq(
-      repeat(seq($.fn_definition, ';')),
-    ),
+    program: $ => repeat(choice(
+      seq($.fn_definition, ';'),
+      $.comment,
+    )),
 
     // Comments
     comment: $ => choice(

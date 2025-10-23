@@ -504,6 +504,10 @@
       "required": false,
       "types": [
         {
+          "type": "comment",
+          "named": true
+        },
+        {
           "type": "fn_definition",
           "named": true
         }

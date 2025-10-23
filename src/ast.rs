@@ -1122,4 +1122,78 @@ mod tests {
             e => panic!("Expected RequiredAfterOptional error, got {:?}", e),
         }
     }
+
+    // Comment parsing tests
+    #[test]
+    fn test_multiline_comment_before_function() {
+        // This was the bug in examples/example.shady
+        let code = r#"/*
+ * This is a multiline comment
+ */
+public main = 42;"#;
+        let result = parse_script(code);
+        assert!(
+            result.is_ok(),
+            "Multiline comment before function should parse successfully, got error: {:?}",
+            result.err()
+        );
+        let program = result.unwrap();
+        assert_eq!(program.fn_definitions.len(), 1);
+        assert_eq!(program.fn_definitions[0].signature.fn_name, "main");
+    }
+
+    #[test]
+    fn test_single_line_comment_before_function() {
+        let code = "# This is a comment\npublic main = 42;";
+        let result = parse_script(code);
+        assert!(result.is_ok());
+        let program = result.unwrap();
+        assert_eq!(program.fn_definitions.len(), 1);
+        assert_eq!(program.fn_definitions[0].signature.fn_name, "main");
+    }
+
+    #[test]
+    fn test_comments_between_functions() {
+        let code = r#"
+foo = 1;
+# Comment between functions
+bar = 2;
+/* Another comment */
+baz = 3;
+"#;
+        let result = parse_script(code);
+        assert!(result.is_ok(), "Comments between functions should parse successfully, got error: {:?}", result.err());
+        let program = result.unwrap();
+        assert_eq!(program.fn_definitions.len(), 3);
+        assert_eq!(program.fn_definitions[0].signature.fn_name, "foo");
+        assert_eq!(program.fn_definitions[1].signature.fn_name, "bar");
+        assert_eq!(program.fn_definitions[2].signature.fn_name, "baz");
+    }
+
+    #[test]
+    fn test_comment_at_end_of_file() {
+        let code = "main = 42;\n# Trailing comment";
+        let result = parse_script(code);
+        assert!(result.is_ok());
+        let program = result.unwrap();
+        assert_eq!(program.fn_definitions.len(), 1);
+        assert_eq!(program.fn_definitions[0].signature.fn_name, "main");
+    }
+
+    #[test]
+    fn test_multiple_comments_before_function() {
+        let code = r#"
+# Comment 1
+# Comment 2
+/* Multiline
+   comment */
+# Comment 3
+public main = 42;
+"#;
+        let result = parse_script(code);
+        assert!(result.is_ok(), "Multiple comments before function should parse successfully, got error: {:?}", result.err());
+        let program = result.unwrap();
+        assert_eq!(program.fn_definitions.len(), 1);
+        assert_eq!(program.fn_definitions[0].signature.fn_name, "main");
+    }
 }

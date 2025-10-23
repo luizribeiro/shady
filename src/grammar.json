@@ -3,11 +3,11 @@
   "word": "token",
   "rules": {
     "program": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "REPEAT",
-          "content": {
+      "type": "REPEAT",
+      "content": {
+        "type": "CHOICE",
+        "members": [
+          {
             "type": "SEQ",
             "members": [
               {
@@ -19,9 +19,13 @@
                 "value": ";"
               }
             ]
+          },
+          {
+            "type": "SYMBOL",
+            "name": "comment"
           }
-        }
-      ]
+        ]
+      }
     },
     "comment": {
       "type": "CHOICE",
@@ -1088,10 +1092,6 @@
     {
       "type": "PATTERN",
       "value": "\\s"
-    },
-    {
-      "type": "SYMBOL",
-      "name": "comment"
     }
   ],
   "conflicts": [
