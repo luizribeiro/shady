@@ -298,6 +298,14 @@ impl LanguageServer for Backend {
             }
         }
 
+        // Only suggest function/builtin completions if we're in a function body
+        // At the top level (function signature context), we shouldn't suggest functions to call
+        if !is_in_function_body(&doc.parse_result.source, position) {
+            // Not in function body - no completions for now
+            // TODO: Could suggest keywords like "public", "infix" here
+            return Ok(None);
+        }
+
         // Get all available function completions
         let mut completions = Vec::new();
 
@@ -624,6 +632,53 @@ fn is_completing_type(text: &str, position: Position) -> bool {
     false
 }
 
+/// Check if the cursor is in a function body (after '=')
+/// If we're before '=' or at top level, we're in signature context, not body
+fn is_in_function_body(text: &str, position: Position) -> bool {
+    // Get all text up to the cursor position
+    let mut char_count = 0;
+    let mut cursor_offset = 0;
+
+    for (line_idx, line) in text.lines().enumerate() {
+        if line_idx == position.line as usize {
+            cursor_offset = char_count + position.character as usize;
+            break;
+        }
+        char_count += line.len() + 1; // +1 for newline
+    }
+
+    if cursor_offset == 0 {
+        return false;
+    }
+
+    let text_up_to_cursor = if cursor_offset <= text.len() {
+        &text[..cursor_offset]
+    } else {
+        text
+    };
+
+    // Look for '=' on the same line or before
+    // If we find '=' before the cursor, we're in a function body
+    // We need to make sure the '=' is part of a function definition, not inside a string
+
+    // Simple heuristic: look backwards from cursor for '='
+    // If we find it and it's followed by some content, we're in the body
+    if let Some(eq_pos) = text_up_to_cursor.rfind('=') {
+        // Check if there's a function definition pattern before the '='
+        // Pattern: [public] name [params] =
+        let before_eq = &text_up_to_cursor[..eq_pos].trim();
+
+        // If the line before '=' looks like a function signature, we're in the body
+        // Simple check: contains a word that could be a function name
+        if !before_eq.is_empty() {
+            // We found '=', so we're in the function body
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Get type completion items
 fn get_type_completions() -> Vec<CompletionItem> {
     vec![
@@ -631,9 +686,7 @@ fn get_type_completions() -> Vec<CompletionItem> {
             label: "int".to_string(),
             kind: Some(CompletionItemKind::TYPE_PARAMETER),
             detail: Some("Integer type".to_string()),
-            documentation: Some(Documentation::String(
-                "Signed integer type".to_string(),
-            )),
+            documentation: Some(Documentation::String("Signed integer type".to_string())),
             ..Default::default()
         },
         CompletionItem {
@@ -647,16 +700,16 @@ fn get_type_completions() -> Vec<CompletionItem> {
             label: "bool".to_string(),
             kind: Some(CompletionItemKind::TYPE_PARAMETER),
             detail: Some("Boolean type".to_string()),
-            documentation: Some(Documentation::String("Boolean type (true/false)".to_string())),
+            documentation: Some(Documentation::String(
+                "Boolean type (true/false)".to_string(),
+            )),
             ..Default::default()
         },
         CompletionItem {
             label: "proc".to_string(),
             kind: Some(CompletionItemKind::TYPE_PARAMETER),
             detail: Some("Process type".to_string()),
-            documentation: Some(Documentation::String(
-                "Process handle type".to_string(),
-            )),
+            documentation: Some(Documentation::String("Process handle type".to_string())),
             ..Default::default()
         },
         CompletionItem {
@@ -931,6 +984,48 @@ mod tests {
     }
 
     #[test]
+    fn test_is_in_function_body_at_top_level() {
+        // Just "p" at top level - not in function body
+        assert!(!is_in_function_body("p", Position::new(0, 1)));
+    }
+
+    #[test]
+    fn test_is_in_function_body_in_signature() {
+        // In function signature, before '='
+        assert!(!is_in_function_body(
+            "public main $x: int",
+            Position::new(0, 19)
+        ));
+    }
+
+    #[test]
+    fn test_is_in_function_body_after_equals() {
+        // After '=' - in function body
+        assert!(is_in_function_body(
+            "public main = echo ",
+            Position::new(0, 19)
+        ));
+    }
+
+    #[test]
+    fn test_is_in_function_body_multiline() {
+        // In function body on second line
+        assert!(is_in_function_body(
+            "public main = seq [\n  echo ",
+            Position::new(1, 7)
+        ));
+    }
+
+    #[test]
+    fn test_is_in_function_body_with_params() {
+        // After '=' with parameters
+        assert!(is_in_function_body(
+            "greet $name: str = echo $name",
+            Position::new(0, 25)
+        ));
+    }
+
+    #[test]
     fn test_variable_completion_in_incomplete_code() {
         // This is the exact example from the user's bug report
         let code = "public main $something: str = seq [\n  (echo $so";
@@ -982,11 +1077,7 @@ mod tests {
         }
 
         // Verify we get the $something completion
-        assert_eq!(
-            completions.len(),
-            1,
-            "Should have one variable completion"
-        );
+        assert_eq!(completions.len(), 1, "Should have one variable completion");
         assert_eq!(completions[0].label, "$something");
         assert_eq!(completions[0].insert_text, Some("something".to_string()));
         assert_eq!(completions[0].detail, Some("str".to_string()));
