@@ -28,6 +28,7 @@ impl Span {
     }
 
     /// Convert to miette's SourceSpan for error reporting
+    #[allow(dead_code)]
     pub fn to_source_span(&self) -> SourceSpan {
         SourceSpan::new(self.offset.into(), self.length)
     }
@@ -133,6 +134,7 @@ pub enum Expr {
 
 impl Expr {
     /// Get the source span for this expression
+    #[allow(dead_code)]
     pub fn span(&self) -> &Span {
         match self {
             Expr::Value(_, span) => span,
@@ -160,7 +162,7 @@ fn named_children<'a>(node: &'a Node<'a>) -> Vec<Node<'a>> {
     node.named_children(&mut cursor).collect()
 }
 
-fn parse_type(node: Node, source: &[u8]) -> Type {
+fn parse_type(node: Node, _source: &[u8]) -> Type {
     match node.kind() {
         "type_int" => Type::Int,
         "type_str" => Type::Str,
@@ -168,12 +170,12 @@ fn parse_type(node: Node, source: &[u8]) -> Type {
         "type_list" => {
             let element_type = child_by_field(&node, "element_type")
                 .expect("type_list must have element_type field");
-            Type::List(Box::new(parse_type(element_type, source)))
+            Type::List(Box::new(parse_type(element_type, _source)))
         }
         "typ" => {
             // typ is a wrapper node, get the actual type child
             let type_child = node.named_child(0).expect("typ node must have a child");
-            parse_type(type_child, source)
+            parse_type(type_child, _source)
         }
         _ => unreachable!("Unknown type: {}", node.kind()),
     }
@@ -1162,7 +1164,11 @@ bar = 2;
 baz = 3;
 "#;
         let result = parse_script(code);
-        assert!(result.is_ok(), "Comments between functions should parse successfully, got error: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Comments between functions should parse successfully, got error: {:?}",
+            result.err()
+        );
         let program = result.unwrap();
         assert_eq!(program.fn_definitions.len(), 3);
         assert_eq!(program.fn_definitions[0].signature.fn_name, "foo");
@@ -1191,7 +1197,11 @@ baz = 3;
 public main = 42;
 "#;
         let result = parse_script(code);
-        assert!(result.is_ok(), "Multiple comments before function should parse successfully, got error: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Multiple comments before function should parse successfully, got error: {:?}",
+            result.err()
+        );
         let program = result.unwrap();
         assert_eq!(program.fn_definitions.len(), 1);
         assert_eq!(program.fn_definitions[0].signature.fn_name, "main");

@@ -101,10 +101,12 @@ pub enum Value {
     Int(i64),
     Str(String),
     Bool(bool),
+    #[allow(dead_code)]
     List {
         inner_type: Type,
         values: Vec<Value>,
     },
+    #[allow(dead_code)]
     Proc(Proc),
 }
 
@@ -147,6 +149,7 @@ impl Display for Value {
     }
 }
 
+#[allow(dead_code)]
 pub trait PrimitiveValue: Sized {
     fn value_type() -> Type;
     fn from_value(value: Value) -> Result<Self>;
@@ -287,18 +290,22 @@ impl PrimitiveValue for Value {
     }
 }
 
+#[allow(dead_code)]
 pub fn value_type<T: PrimitiveValue>() -> Type {
     <T>::value_type()
 }
 
+#[allow(dead_code)]
 pub fn from_value<T: PrimitiveValue>(value: Value) -> Result<T> {
     <T>::from_value(value)
 }
 
+#[allow(dead_code)]
 pub fn to_value<T: PrimitiveValue>(value: T) -> Value {
     <T>::to_value(&value)
 }
 
+#[allow(dead_code)]
 pub fn from_string(typ: &Type, s: &str) -> Result<Value> {
     match typ {
         Type::Int => s

@@ -8,17 +8,20 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 /// Stores document state for the LSP server
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct DocumentState {
     text: String,
 }
 
 /// Backend state for the Shady LSP server
+#[allow(dead_code)]
 pub struct Backend {
     client: Client,
     documents: Arc<RwLock<HashMap<Url, DocumentState>>>,
 }
 
+#[allow(dead_code)]
 impl Backend {
     pub fn new(client: Client) -> Self {
         Self {
@@ -345,6 +348,7 @@ impl LanguageServer for Backend {
 }
 
 /// Convert a byte offset to LSP Position (line and character)
+#[allow(dead_code)]
 fn offset_to_position(text: &str, offset: usize) -> Position {
     let mut line = 0;
     let mut character = 0;
@@ -366,6 +370,7 @@ fn offset_to_position(text: &str, offset: usize) -> Position {
 }
 
 /// Convert LSP Position to byte offset
+#[allow(dead_code)]
 fn position_to_offset(text: &str, position: Position) -> usize {
     let mut offset = 0;
     let mut current_line = 0;
@@ -390,6 +395,7 @@ fn position_to_offset(text: &str, position: Position) -> usize {
 }
 
 /// Find the identifier at a given byte offset
+#[allow(dead_code)]
 fn find_identifier_at_position(text: &str, offset: usize) -> Option<String> {
     // Find the start and end of the identifier at this position
     let chars: Vec<char> = text.chars().collect();
@@ -428,11 +434,13 @@ fn find_identifier_at_position(text: &str, offset: usize) -> Option<String> {
 }
 
 /// Check if a character is valid in an identifier
+#[allow(dead_code)]
 fn is_identifier_char(ch: char) -> bool {
     ch.is_alphanumeric() || ch == '_'
 }
 
 /// Find the definition location for a function call
+#[allow(dead_code)]
 fn find_function_call_definition(
     ast: &crate::ast::ProgramAST,
     text: &str,
@@ -483,6 +491,7 @@ fn find_function_call_definition(
 }
 
 /// Extract the function name being called at the cursor position
+#[allow(dead_code)]
 fn extract_function_name_at_cursor(line_up_to_cursor: &str) -> Option<String> {
     // In Shady, function calls look like: "function_name $arg1 $arg2"
     // We want to find the function name (first word after '=' if present, or first word on line)
@@ -515,6 +524,7 @@ fn extract_function_name_at_cursor(line_up_to_cursor: &str) -> Option<String> {
 }
 
 /// Create signature information from a function signature
+#[allow(dead_code)]
 fn create_signature_info(signature: &crate::ast::FnSignature) -> SignatureInformation {
     let mut label = signature.fn_name.clone();
     let mut parameters = Vec::new();
@@ -556,6 +566,7 @@ fn create_signature_info(signature: &crate::ast::FnSignature) -> SignatureInform
 }
 
 /// Get signature information for a builtin function
+#[allow(dead_code)]
 fn get_builtin_signature(fn_name: &str) -> Option<SignatureInformation> {
     let (label, params) = match fn_name {
         "exec" => ("exec $proc: proc -> int", vec!["$proc: proc"]),
@@ -602,6 +613,7 @@ fn get_builtin_signature(fn_name: &str) -> Option<SignatureInformation> {
 }
 
 /// Get completion items for builtin functions
+#[allow(dead_code)]
 fn get_builtin_completions() -> Vec<CompletionItem> {
     vec![
         CompletionItem {
@@ -716,6 +728,7 @@ fn get_builtin_completions() -> Vec<CompletionItem> {
 }
 
 /// Create and run the LSP server
+#[allow(dead_code)]
 pub async fn run_server() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
