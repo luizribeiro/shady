@@ -41,8 +41,7 @@ Create a file `hello.shady`:
 public greet $name: str = print "Hello, {$name}!";
 
 # Combines type safety with external command execution
-public greet-uppercase $name: str =
-  exec (echo "Hello, {$name}!" > tr "a-z" "A-Z");
+public greet-uppercase $name: str = exec (echo "Hello, {$name}!" > tr "a-z" "A-Z");
 ```
 
 Run it as a CLI:
@@ -68,20 +67,14 @@ Shady supports the following types:
 ```shady
 # Type-safe calculator with proper precedence
 # Returns ($x + $y) * 8
-public calculate $x: int $y: int -> int =
-  ($x + $y) * 2 ^ 3;
+public calculate $x: int $y: int -> int = $x + $y * 2 ^ 3;
 
 # Type errors are caught at parse/eval time
 # Returns 0 for division by zero
-public safe-divide $a: int $b: int -> int =
-  if ($b == 0)
-    0
-  else
-    $a / $b;
+public safe-divide $a: int $b: int -> int = if ($b == 0) 0 else $a / $b;
 
 # Lambda expressions enable functional composition
-public double-twice $x: int -> int =
-  first (map (lambda $y -> $y * 2) (map (lambda $z -> $z * 2) [$x]));
+public double-twice $x: int -> int = first (map (lambda $y -> $y * 2) (map (lambda $z -> $z * 2) [$x]));
 ```
 
 ### String Interpolation
@@ -93,20 +86,16 @@ Embed expressions directly in strings using `{expr}` syntax. Any expression can 
 public greet $name: str = print "Hello, {$name}!";
 
 # Arithmetic expressions
-public show-result $x: int $y: int =
-  print "{$x} + {$y} = {$x + $y}";
+public show-result $x: int $y: int = print "{$x} + {$y} = {$x + $y}";
 
 # Nested expressions and function calls
-public deployment-status $version: str $server: str =
-  print "Deploying v{$version} to {$server} at {stdout (date)}";
+public deployment-status $version: str $server: str = print "Deploying v{$version} to {$server} at {stdout (date)}";
 
 # Boolean expressions
-public check-value $x: int =
-  print ("Value " + (to_string $x) + " is " + (if ($x > 10) "large" else "small"));
+public check-value $x: int = print ("Value " + to_string $x + " is " + if ($x > 10) "large" else "small");
 
 # Mix interpolation with literals
-public format-list $count: int =
-  print ("Found " + (to_string $count) + " item" + (if ($count == 1) "" else "s"));
+public format-list $count: int = print ("Found " + to_string $count + " item" + if ($count == 1) "" else "s");
 ```
 
 String interpolation makes string building more readable compared to concatenation:
@@ -128,19 +117,13 @@ External commands are first-class citizens. Shady automatically spawns processes
 public get-git-branch = stdout (git branch --show-current);
 
 # Chain processes with type-safe redirection
-public count-errors $logfile: str =
-  stdout (cat $logfile > grep "ERROR" > wc -l);
+public count-errors $logfile: str = stdout (cat $logfile > grep "ERROR" > wc -l);
 
 # Compose complex pipelines naturally
-public top-committers =
-  lines (
-    git log --oneline >
-    head -10
-  );
+public top-committers = lines (git log --oneline > head -10);
 
 # Mix typed data with process output
-public deploy-info $version: str =
-  print ("Deploying version " + $version + " to " + get-git-branch);
+public deploy-info $version: str = print ("Deploying version " + $version + " to " + get-git-branch);
 ```
 
 ### Sequential Execution
@@ -206,12 +189,10 @@ Public functions automatically become CLI subcommands with proper argument parsi
 
 ```shady
 # Default values make parameters optional
-public serve $port: int (8080, option) =
-  echo ("Starting server on port " + (to_string $port));
+public serve $port: int (8080, option) = echo ("Starting server on port " + to_string $port);
 
 # Multiple optional parameters with sensible defaults
-public docker-build $name: str $tag: str ("latest", option) =
-  echo ("Building " + $name + " with tag " + $tag);
+public docker-build $name: str $tag: str ("latest", option) = echo ("Building " + $name + " with tag " + $tag);
 ```
 
 Use from the command line:
@@ -353,15 +334,10 @@ Call from CLI:
 public get-editor = env "EDITOR" "vim";
 
 # Build dynamic paths from environment
-public backup-to-home $filename: str =
-  exec (cp $filename ((env "HOME" "/tmp") + "/backup/" + $filename));
+public backup-to-home $filename: str = exec (cp $filename (env "HOME" "/tmp" + "/backup/" + $filename));
 
 # Environment-aware configuration
-public configure =
-  if ((env "ENV" "dev") == "prod")
-    echo "Using production config"
-  else
-    echo "Using development config";
+public configure = if (env "ENV" "dev" == "prod") echo "Using production config" else echo "Using development config";
 ```
 
 ## Real-World Examples
@@ -379,7 +355,7 @@ public deploy-cluster $version: str = seq [
 
 # Automated backup with rotation
 public backup-all = seq [
-  echo ("Starting backup at " + (stdout (date)));
+  echo ("Starting backup at " + stdout (date));
   pg_dump production;
   tar czf backup.tgz /var/www;
   echo "Backup complete";
@@ -454,25 +430,16 @@ public check-error-rate $logfile: str $threshold: int = seq [
 
 ```shady
 # Process lists of files with functional composition
-public analyze-files $files: [str] =
-  map (lambda $file -> $file + ": processed") $files;
+public analyze-files $files: [str] = map (lambda $file -> $file + ": processed") $files;
 
 # Transform and filter with map
-public process-numbers $nums: [int] =
-  filter
-    (lambda $x -> $x > 10)
-    (map (lambda $y -> $y * 2) $nums);
+public process-numbers $nums: [int] = filter (lambda $x -> $x > 10) (map (lambda $y -> $y * 2) $nums);
 
 # Parallel-style processing with map
-public format-list $items: [str] =
-  map (lambda $item -> "Item: " + $item) $items;
+public format-list $items: [str] = map (lambda $item -> "Item: " + $item) $items;
 
 # Compute statistics with reduce
-public sum-and-double $nums: [int] -> int =
-  reduce
-    (lambda $acc $x -> $acc + ($x * 2))
-    0
-    $nums;
+public sum-and-double $nums: [int] -> int = reduce (lambda $acc $x -> $acc + $x * 2) 0 $nums;
 ```
 
 ## IDE Support
