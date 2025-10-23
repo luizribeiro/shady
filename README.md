@@ -9,10 +9,12 @@ Shady is a typed scripting language designed for system automation and command o
 
 Traditional shell scripts are powerful but lack type safety and structured process management. Shady addresses these limitations by providing:
 
-- **Type Safety**: Catch errors before runtime with a static type system (int, str, bool, list, proc)
+- **Type Safety**: Catch errors before runtime with a static type system (int, str, bool, list, proc, functions)
 - **First-Class Processes**: Process handles (`Proc` type) with built-in support for stdin/stdout/stderr redirection
+- **Functional Programming**: Lambda expressions with closures and higher-order functions (map, filter, reduce)
 - **Automatic CLI Generation**: Public functions become CLI subcommands automatically with proper argument parsing
-- **Clean Syntax**: Readable, structured syntax with support for comments, conditionals, and expressions
+- **IDE Support**: Built-in LSP server with auto-completion, type checking, and signature help
+- **Clean Syntax**: Readable, structured syntax with string interpolation and functional composition
 - **Seamless External Commands**: Call any external command as if it were a native function
 
 ## Quick Start
@@ -61,6 +63,7 @@ Shady supports the following types:
 - `bool` - Boolean values
 - `[T]` - Lists of any type
 - `proc` - Process handles with I/O streams
+- `fn(T1, T2, ...) -> R` - Function types (lambdas)
 
 ```shady
 # Type-safe calculator with proper precedence
@@ -73,6 +76,10 @@ public safe-divide $a: int $b: int -> int =
     0  # Return 0 for division by zero
   else
     $a / $b;
+
+# Higher-order functions with function types
+public apply-twice $f: fn(int) -> int $x: int -> int =
+  $f ($f $x);
 ```
 
 ### String Interpolation
@@ -264,17 +271,59 @@ public count-project-lines =
   );
 ```
 
+### Lambda Expressions and Higher-Order Functions
+
+Shady supports first-class lambda expressions with closures, enabling functional programming patterns:
+
+```shady
+# Lambda syntax: λ or lambda keyword
+public double-all $nums: [int] =
+  map (λ $x -> $x * 2) $nums;
+
+# Lambdas can capture variables from their environment (closures)
+public add-to-all $n: int $nums: [int] =
+  map (λ $x -> $x + $n) $nums;
+
+# Filter with predicates
+public get-positives $nums: [int] =
+  filter (λ $x -> $x > 0) $nums;
+
+# Reduce for aggregation
+public sum-list $nums: [int] =
+  reduce (λ $acc $x -> $acc + $x) 0 $nums;
+
+# Combine higher-order functions
+public process-numbers $nums: [int] =
+  reduce
+    (λ $acc $x -> $acc + $x)
+    0
+    (filter (λ $x -> $x > 0) (map (λ $x -> $x * 2) $nums));
+
+# Type annotations are optional (inferred from context)
+public explicit-types $nums: [int] =
+  map (λ $x: int -> int = $x + 1) $nums;
+
+# Multi-parameter lambdas
+public zip-sum $a: [int] $b: [int] =
+  reduce (λ $acc $pair -> $acc + (first $pair) + (first (rest $pair))) 0 []; # simplified
+```
+
 ### List Operations
 
 ```shady
 # List literals use semicolon separators
 public sum-numbers = print (to_string (add_all [1; 2; 3; 4; 5]));  # 15
 
+# Transform lists with map
+public square-all $nums: [int] = map (λ $x -> $x * $x) $nums;
+
+# Filter lists with predicates
+public get-evens $nums: [int] = filter (λ $x -> ($x % 2) == 0) $nums;
+
 # Lists from CLI are comma-separated
 public batch-process $files: [str] = seq [
   echo ("Processing " + (to_string (add_all [1])) + " files...");
   first $files;  # Process first file
-  # In future: map over $files
 ];
 
 # Combine lists with process output
@@ -287,6 +336,16 @@ public analyze-git-files $extensions: [str] =
 # Dynamic list building from command output
 public modified-files =
   lines (git diff --name-only);
+
+# Functional data processing
+public count-large-files $threshold: int =
+  reduce
+    (λ $count $_ -> $count + 1)
+    0
+    (filter
+      (λ $size -> $size > $threshold)
+      (map (λ $line -> first (lines $line)) (lines (du -b *)))
+    );
 ```
 
 Call from CLI:
@@ -413,16 +472,64 @@ public check-error-rate $logfile: str $threshold: int = seq [
 ];
 ```
 
+### Functional Data Processing
+
+```shady
+# Process lists of files with functional composition
+public analyze-code-quality $files: [str] =
+  reduce
+    (λ $report $file ->
+      $report + "\n" + $file + ": " + (stdout (wc -l $file)))
+    "Code Quality Report:"
+    (filter
+      (λ $file -> (stdout (wc -l $file)) > "100")
+      $files
+    );
+
+# Transform and filter log entries functionally
+public get-recent-errors $hours: int =
+  filter
+    (λ $line -> (stdout (echo $line > grep -c "ERROR")) > "0")
+    (lines (find /var/log -name "*.log" -mtime (-$hours)));
+
+# Parallel-style processing with map
+public check-all-services $services: [str] =
+  map
+    (λ $svc -> $svc + ": " +
+      (if ((exec (systemctl is-active $svc)) == 0)
+        "running"
+      else
+        "stopped"))
+    $services;
+
+# Compute statistics with reduce
+public total-disk-usage $dirs: [str] =
+  reduce
+    (λ $total $dir -> $total + (stdout (du -sm $dir > awk "{print $1}")))
+    0
+    $dirs;
+```
+
+## IDE Support
+
+Shady includes a Language Server Protocol (LSP) implementation for enhanced IDE integration:
+
+- **Auto-completion**: Context-aware suggestions for functions, variables, and types
+- **Signature Help**: Real-time parameter hints while typing function calls
+- **Go to Definition**: Jump to function definitions
+- **Type Checking**: Real-time type error detection
+- **Hover Information**: Type information on hover
+
+The LSP automatically discovers all builtins (including user-defined ones via macros), so IDE features stay in sync with language extensions.
+
 ## Planned Features
 
 - Variadic functions
 - Optional function parameters (beyond default values)
 - Stream support for builtins and local functions
-- Lambda expressions and higher-order functions
-- List map/reduce operations
 - Enhanced error messages with miette
-- Static type analyzer
 - Advanced I/O redirection from seq blocks
+- More comprehensive standard library
 
 ## Development
 

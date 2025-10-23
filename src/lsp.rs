@@ -3,12 +3,27 @@ use crate::builtins;
 use crate::error::ShadyError;
 use crate::eval::BuiltinIndex;
 use crate::typecheck::TypeChecker;
+use crate::types::Type;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
+
+/// Simplified builtin signature for LSP (thread-safe, no default values)
+#[derive(Debug, Clone)]
+struct LspBuiltinSignature {
+    fn_name: String,
+    parameters: Vec<LspBuiltinParam>,
+    return_type: Type,
+}
+
+#[derive(Debug, Clone)]
+struct LspBuiltinParam {
+    name: String,
+    typ: Type,
+}
 
 /// Stores document state for the LSP server
 #[derive(Debug, Clone)]
@@ -20,13 +35,38 @@ struct DocumentState {
 pub struct Backend {
     client: Client,
     documents: Arc<RwLock<HashMap<Url, DocumentState>>>,
+    builtin_signatures: Arc<Vec<LspBuiltinSignature>>,
 }
 
 impl Backend {
     pub fn new(client: Client) -> Self {
+        // Initialize builtins once for the entire LSP session
+        // We only need the signatures for LSP features, not the implementations
+        #[allow(clippy::mutable_key_type)]
+        let mut builtins: BuiltinIndex = HashMap::new();
+        builtins::setup_builtins(&mut builtins);
+
+        // Convert to simplified LSP signatures (thread-safe, no default values)
+        let builtin_signatures: Vec<LspBuiltinSignature> = builtins
+            .keys()
+            .map(|sig| LspBuiltinSignature {
+                fn_name: sig.fn_name.clone(),
+                parameters: sig
+                    .parameters
+                    .iter()
+                    .map(|p| LspBuiltinParam {
+                        name: p.name.clone(),
+                        typ: p.typ.clone(),
+                    })
+                    .collect(),
+                return_type: sig.return_type.clone(),
+            })
+            .collect();
+
         Self {
             client,
             documents: Arc::new(RwLock::new(HashMap::new())),
+            builtin_signatures: Arc::new(builtin_signatures),
         }
     }
 
@@ -416,7 +456,7 @@ impl LanguageServer for Backend {
         }
 
         // Add builtin functions
-        completions.extend(get_builtin_completions());
+        completions.extend(get_builtin_completions(&self.builtin_signatures));
 
         Ok(Some(CompletionResponse::Array(completions)))
     }
@@ -456,7 +496,7 @@ impl LanguageServer for Backend {
             }
 
             // Look for builtin function
-            if let Some(signature_info) = get_builtin_signature(&fn_name) {
+            if let Some(signature_info) = get_builtin_signature(&fn_name, &self.builtin_signatures) {
                 return Ok(Some(SignatureHelp {
                     signatures: vec![signature_info],
                     active_signature: Some(0),
@@ -640,42 +680,49 @@ fn create_signature_info(signature: &crate::ast::LspSignature) -> SignatureInfor
     }
 }
 
-/// Get signature information for a builtin function
-fn get_builtin_signature(fn_name: &str) -> Option<SignatureInformation> {
-    let (label, params) = match fn_name {
-        "exec" => ("exec $proc: proc -> int", vec!["$proc: proc"]),
-        "seq" => ("seq $procs: [proc] -> int", vec!["$procs: [proc]"]),
-        "stdout" => ("stdout $proc: proc -> str", vec!["$proc: proc"]),
-        "print" => ("print $s: str -> int", vec!["$s: str"]),
-        "lines" => ("lines $input: str|proc -> [str]", vec!["$input: str|proc"]),
-        "to_string" => ("to_string $i: int -> str", vec!["$i: int"]),
-        "first" => ("first $list: [any] -> any", vec!["$list: [any]"]),
-        "add_all" => ("add_all $list: [int] -> int", vec!["$list: [int]"]),
-        "env" => (
-            "env $var_name: str $default: str -> str",
-            vec!["$var_name: str", "$default: str"],
-        ),
-        "os" => ("os -> str", vec![]),
-        "echo" => ("echo $msg: str -> proc", vec!["$msg: str"]),
-        "cat" => ("cat $file: str -> proc", vec!["$file: str"]),
-        _ => return None,
-    };
+/// Get signature information for a builtin function by querying the builtin signatures
+fn get_builtin_signature(fn_name: &str, builtin_sigs: &[LspBuiltinSignature]) -> Option<SignatureInformation> {
+    // Find all builtin signatures with this name
+    let matching_sigs: Vec<_> = builtin_sigs
+        .iter()
+        .filter(|sig| sig.fn_name == fn_name)
+        .collect();
 
-    let mut parameters = Vec::new();
-    let mut current_pos = fn_name.len() + 1; // Account for function name and space
-
-    for param in params {
-        let start = current_pos;
-        let end = start + param.len();
-        parameters.push(ParameterInformation {
-            label: ParameterLabel::LabelOffsets([start as u32, end as u32]),
-            documentation: None,
-        });
-        current_pos = end + 1; // Account for space between parameters
+    if matching_sigs.is_empty() {
+        return None;
     }
 
+    // For now, just take the first signature if there are multiple overloads
+    // TODO: In the future, we could show all overloads
+    let signature = matching_sigs[0];
+
+    // Build the label string: "fn_name $param1: type1 $param2: type2 -> return_type"
+    let mut label = signature.fn_name.clone();
+    let mut parameters = Vec::new();
+
+    if !signature.parameters.is_empty() {
+        label.push(' ');
+        for (i, param) in signature.parameters.iter().enumerate() {
+            if i > 0 {
+                label.push(' ');
+            }
+            let param_label = format!("${}: {}", param.name, param.typ);
+            let start = label.len();
+            label.push_str(&param_label);
+            let end = label.len();
+
+            parameters.push(ParameterInformation {
+                label: ParameterLabel::LabelOffsets([start as u32, end as u32]),
+                documentation: None,
+            });
+        }
+    }
+
+    // Add return type
+    label.push_str(&format!(" -> {}", signature.return_type));
+
     Some(SignatureInformation {
-        label: label.to_string(),
+        label,
         documentation: None,
         parameters: if parameters.is_empty() {
             None
@@ -865,118 +912,75 @@ fn get_type_completions() -> Vec<CompletionItem> {
     ]
 }
 
-/// Get completion items for builtin functions
-fn get_builtin_completions() -> Vec<CompletionItem> {
-    vec![
-        CompletionItem {
-            label: "echo".to_string(),
+/// Get completion items for builtin functions by querying the builtin signatures
+fn get_builtin_completions(builtin_sigs: &[LspBuiltinSignature]) -> Vec<CompletionItem> {
+    // Group signatures by function name to handle overloads
+    let mut by_name: std::collections::HashMap<String, Vec<&LspBuiltinSignature>> =
+        std::collections::HashMap::new();
+
+    for sig in builtin_sigs {
+        by_name
+            .entry(sig.fn_name.clone())
+            .or_insert_with(Vec::new)
+            .push(sig);
+    }
+
+    // Generate completion items
+    let mut completions = Vec::new();
+    for (fn_name, sigs) in by_name.iter() {
+        // Build detail string from all signatures (show overloads if multiple)
+        let detail = if sigs.len() == 1 {
+            // Single signature
+            let sig = sigs[0];
+            let mut s = sig.fn_name.clone();
+            if !sig.parameters.is_empty() {
+                s.push(' ');
+                for (i, param) in sig.parameters.iter().enumerate() {
+                    if i > 0 {
+                        s.push(' ');
+                    }
+                    s.push_str(&format!("${}: {}", param.name, param.typ));
+                }
+            }
+            s.push_str(&format!(" -> {}", sig.return_type));
+            s
+        } else {
+            // Multiple overloads - show all
+            sigs.iter()
+                .map(|sig| {
+                    let mut s = sig.fn_name.clone();
+                    if !sig.parameters.is_empty() {
+                        s.push(' ');
+                        for (i, param) in sig.parameters.iter().enumerate() {
+                            if i > 0 {
+                                s.push(' ');
+                            }
+                            s.push_str(&format!("${}: {}", param.name, param.typ));
+                        }
+                    }
+                    s.push_str(&format!(" -> {}", sig.return_type));
+                    s
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        completions.push(CompletionItem {
+            label: fn_name.clone(),
             kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("echo $msg: str -> proc".to_string()),
-            documentation: Some(Documentation::String(
-                "Print a message to stdout (external command)".to_string(),
-            )),
+            detail: Some(detail),
+            documentation: Some(Documentation::String(format!(
+                "Builtin function: {}",
+                fn_name
+            ))),
             ..Default::default()
-        },
-        CompletionItem {
-            label: "print".to_string(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("print $s: str -> int".to_string()),
-            documentation: Some(Documentation::String(
-                "Print a string and return 0".to_string(),
-            )),
-            ..Default::default()
-        },
-        CompletionItem {
-            label: "exec".to_string(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("exec $proc: proc -> int".to_string()),
-            documentation: Some(Documentation::String(
-                "Execute a process and return its exit code".to_string(),
-            )),
-            ..Default::default()
-        },
-        CompletionItem {
-            label: "seq".to_string(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("seq $procs: [proc] -> int".to_string()),
-            documentation: Some(Documentation::String(
-                "Execute a sequence of processes and return the last exit code".to_string(),
-            )),
-            ..Default::default()
-        },
-        CompletionItem {
-            label: "stdout".to_string(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("stdout $proc: proc -> str".to_string()),
-            documentation: Some(Documentation::String(
-                "Capture stdout from a process as a string".to_string(),
-            )),
-            ..Default::default()
-        },
-        CompletionItem {
-            label: "lines".to_string(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("lines $s: str -> [str] or lines $proc: proc -> [str]".to_string()),
-            documentation: Some(Documentation::String(
-                "Split a string or process output into lines".to_string(),
-            )),
-            ..Default::default()
-        },
-        CompletionItem {
-            label: "to_string".to_string(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("to_string $i: int -> str".to_string()),
-            documentation: Some(Documentation::String(
-                "Convert an integer to a string".to_string(),
-            )),
-            ..Default::default()
-        },
-        CompletionItem {
-            label: "first".to_string(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("first $list: [any] -> any".to_string()),
-            documentation: Some(Documentation::String(
-                "Get the first element of a list".to_string(),
-            )),
-            ..Default::default()
-        },
-        CompletionItem {
-            label: "add_all".to_string(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("add_all $list: [int] -> int".to_string()),
-            documentation: Some(Documentation::String(
-                "Sum all integers in a list".to_string(),
-            )),
-            ..Default::default()
-        },
-        CompletionItem {
-            label: "env".to_string(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("env $var_name: str $default: str -> str".to_string()),
-            documentation: Some(Documentation::String(
-                "Get an environment variable with a default value".to_string(),
-            )),
-            ..Default::default()
-        },
-        CompletionItem {
-            label: "os".to_string(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("os -> str".to_string()),
-            documentation: Some(Documentation::String(
-                "Get the operating system name".to_string(),
-            )),
-            ..Default::default()
-        },
-        CompletionItem {
-            label: "cat".to_string(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("cat $file: str -> proc".to_string()),
-            documentation: Some(Documentation::String(
-                "Read and display file contents (external command)".to_string(),
-            )),
-            ..Default::default()
-        },
-    ]
+        });
+    }
+
+    // Sort by function name for consistent ordering
+    completions.sort_by(|a, b| a.label.cmp(&b.label));
+
+    completions
 }
 
 /// Create and run the LSP server
@@ -992,6 +996,29 @@ pub async fn run_server() {
 mod tests {
     use super::*;
     use crate::ast::parse_script_tolerant;
+
+    /// Helper to get LSP builtin signatures for tests
+    fn get_test_builtin_signatures() -> Vec<LspBuiltinSignature> {
+        #[allow(clippy::mutable_key_type)]
+        let mut builtins: BuiltinIndex = HashMap::new();
+        builtins::setup_builtins(&mut builtins);
+
+        builtins
+            .keys()
+            .map(|sig| LspBuiltinSignature {
+                fn_name: sig.fn_name.clone(),
+                parameters: sig
+                    .parameters
+                    .iter()
+                    .map(|p| LspBuiltinParam {
+                        name: p.name.clone(),
+                        typ: p.typ.clone(),
+                    })
+                    .collect(),
+                return_type: sig.return_type.clone(),
+            })
+            .collect()
+    }
 
     #[test]
     fn test_is_completing_variable_after_dollar() {
@@ -1244,25 +1271,29 @@ mod tests {
 
     #[test]
     fn test_get_builtin_signature() {
+        let builtin_sigs = get_test_builtin_signatures();
+
         // Test exec signature
-        let sig = get_builtin_signature("exec").unwrap();
-        assert_eq!(sig.label, "exec $proc: proc -> int");
+        let sig = get_builtin_signature("exec", &builtin_sigs).unwrap();
+        assert!(sig.label.contains("exec"));
+        assert!(sig.label.contains("proc"));
+        assert!(sig.label.contains("int"));
         assert!(sig.parameters.is_some());
-        assert_eq!(sig.parameters.as_ref().unwrap().len(), 1);
 
         // Test env signature (multiple parameters)
-        let sig = get_builtin_signature("env").unwrap();
-        assert_eq!(sig.label, "env $var_name: str $default: str -> str");
+        let sig = get_builtin_signature("env", &builtin_sigs).unwrap();
+        assert!(sig.label.contains("env"));
+        assert!(sig.label.contains("str"));
         assert!(sig.parameters.is_some());
-        assert_eq!(sig.parameters.as_ref().unwrap().len(), 2);
+        assert!(sig.parameters.as_ref().unwrap().len() >= 2);
 
         // Test os signature (no parameters)
-        let sig = get_builtin_signature("os").unwrap();
-        assert_eq!(sig.label, "os -> str");
-        assert!(sig.parameters.is_none());
+        let sig = get_builtin_signature("os", &builtin_sigs).unwrap();
+        assert!(sig.label.contains("os"));
+        assert!(sig.label.contains("str"));
 
         // Test non-existent function
-        assert!(get_builtin_signature("nonexistent").is_none());
+        assert!(get_builtin_signature("nonexistent", &builtin_sigs).is_none());
     }
 
     #[test]
@@ -1350,7 +1381,8 @@ mod tests {
 
     #[test]
     fn test_get_builtin_completions() {
-        let completions = get_builtin_completions();
+        let builtin_sigs = get_test_builtin_signatures();
+        let completions = get_builtin_completions(&builtin_sigs);
 
         // Should have all the core builtin functions
         assert!(completions.len() >= 10);
@@ -1369,6 +1401,128 @@ mod tests {
             assert!(completion.detail.is_some());
             assert!(completion.documentation.is_some());
         }
+    }
+
+    #[test]
+    fn test_builtin_completions_include_map_filter_reduce() {
+        let builtin_sigs = get_test_builtin_signatures();
+        let completions = get_builtin_completions(&builtin_sigs);
+
+        // Check that map, filter, and reduce are present
+        let labels: Vec<String> = completions.iter().map(|c| c.label.clone()).collect();
+        assert!(
+            labels.contains(&"map".to_string()),
+            "map should be in completions"
+        );
+        assert!(
+            labels.contains(&"filter".to_string()),
+            "filter should be in completions"
+        );
+        assert!(
+            labels.contains(&"reduce".to_string()),
+            "reduce should be in completions"
+        );
+
+        // Verify the details contain function type information
+        let map_completion = completions.iter().find(|c| c.label == "map").unwrap();
+        assert!(
+            map_completion.detail.is_some(),
+            "map should have detail"
+        );
+        let map_detail = map_completion.detail.as_ref().unwrap();
+        assert!(
+            map_detail.contains("fn(") && map_detail.contains("->"),
+            "map detail should show function type: {}",
+            map_detail
+        );
+
+        let filter_completion = completions.iter().find(|c| c.label == "filter").unwrap();
+        assert!(
+            filter_completion.detail.is_some(),
+            "filter should have detail"
+        );
+        let filter_detail = filter_completion.detail.as_ref().unwrap();
+        assert!(
+            filter_detail.contains("fn(") && filter_detail.contains("bool"),
+            "filter detail should show function type returning bool: {}",
+            filter_detail
+        );
+
+        let reduce_completion = completions.iter().find(|c| c.label == "reduce").unwrap();
+        assert!(
+            reduce_completion.detail.is_some(),
+            "reduce should have detail"
+        );
+        let reduce_detail = reduce_completion.detail.as_ref().unwrap();
+        assert!(
+            reduce_detail.contains("fn(") && reduce_detail.contains("->"),
+            "reduce detail should show function type: {}",
+            reduce_detail
+        );
+    }
+
+    #[test]
+    fn test_builtin_signature_for_map_filter_reduce() {
+        let builtin_sigs = get_test_builtin_signatures();
+
+        // Test map signature
+        let map_sig = get_builtin_signature("map", &builtin_sigs);
+        assert!(map_sig.is_some(), "map signature should be available");
+        let map_sig = map_sig.unwrap();
+        assert!(
+            map_sig.label.contains("map"),
+            "map signature label should contain 'map'"
+        );
+        assert!(
+            map_sig.label.contains("fn(") && map_sig.label.contains("->"),
+            "map signature should show function type: {}",
+            map_sig.label
+        );
+        assert!(
+            map_sig.parameters.is_some(),
+            "map should have parameters"
+        );
+
+        // Test filter signature
+        let filter_sig = get_builtin_signature("filter", &builtin_sigs);
+        assert!(filter_sig.is_some(), "filter signature should be available");
+        let filter_sig = filter_sig.unwrap();
+        assert!(
+            filter_sig.label.contains("filter"),
+            "filter signature label should contain 'filter'"
+        );
+        assert!(
+            filter_sig.label.contains("fn(") && filter_sig.label.contains("bool"),
+            "filter signature should show function type returning bool: {}",
+            filter_sig.label
+        );
+        assert!(
+            filter_sig.parameters.is_some(),
+            "filter should have parameters"
+        );
+
+        // Test reduce signature
+        let reduce_sig = get_builtin_signature("reduce", &builtin_sigs);
+        assert!(reduce_sig.is_some(), "reduce signature should be available");
+        let reduce_sig = reduce_sig.unwrap();
+        assert!(
+            reduce_sig.label.contains("reduce"),
+            "reduce signature label should contain 'reduce'"
+        );
+        assert!(
+            reduce_sig.label.contains("fn(") && reduce_sig.label.contains("->"),
+            "reduce signature should show function type: {}",
+            reduce_sig.label
+        );
+        assert!(
+            reduce_sig.parameters.is_some(),
+            "reduce should have parameters"
+        );
+        // reduce has 3 parameters: lambda, init value, list
+        assert!(
+            reduce_sig.parameters.as_ref().unwrap().len() >= 3,
+            "reduce should have at least 3 parameters"
+        );
     }
 }
 

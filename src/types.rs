@@ -120,6 +120,7 @@ impl PartialEq for Proc {
 }
 
 use std::collections::HashMap;
+use std::marker::PhantomData;
 
 /// Lambda function (closure) value
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,6 +130,39 @@ pub struct Lambda {
     pub return_type: Type,
     pub body: Rc<crate::ast::Expr>,
     pub captured_env: HashMap<String, Value>,
+}
+
+// ============================================================================
+// Type-level marker types for macro type inference
+// These types exist only for the #[eval_builtin] macro to inspect generic
+// parameters and automatically generate type specs. They are never actually
+// used at runtime.
+// ============================================================================
+
+/// Type marker for `any` type
+pub struct Any;
+
+/// Type marker for `int` type
+pub struct Int;
+
+/// Type marker for `str` type
+pub struct Str;
+
+/// Type marker for `bool` type
+pub struct Bool;
+
+/// Type marker for list types: List<T> represents [T]
+pub struct List<T> {
+    _phantom: PhantomData<T>,
+}
+
+/// Type marker for lambda functions: LambdaType<Params, R> represents fn(Params) -> R
+/// Examples:
+/// - LambdaType<(Int,), Bool> represents fn(int) -> bool
+/// - LambdaType<(Int, Str), Bool> represents fn(int, str) -> bool
+/// - LambdaType<(Any, Any), Any> represents fn(any, any) -> any
+pub struct LambdaType<Params, R> {
+    _phantom: PhantomData<(Params, R)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

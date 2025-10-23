@@ -4,18 +4,18 @@
 
 use crate::error::{Result, ShadyError};
 use crate::eval::{eval_expr_with_type, LocalContext, ShadyContext};
-use crate::types::{Lambda, Type, Value};
+use crate::types::{Any, Bool, LambdaType, List, Type, Value};
 use shady_macros::eval_builtin;
 
 /// Implements map: applies a lambda to each element of a list
 /// map $fn: fn(T) -> R $list: [T] -> [R]
-#[eval_builtin("map", "fn(any)->any, [any]", "[any]")]
-pub fn map_impl(
-    lambda: &Lambda,
-    list: &Value,
+#[eval_builtin("map")]
+pub fn map_impl<T, R>(
+    lambda: &LambdaType<(T,), R>,
+    list: &List<T>,
     local_context: &LocalContext,
     context: &ShadyContext,
-) -> Result<Value> {
+) -> Result<List<R>> {
     let (_inner_type, values) = match list {
         Value::List { inner_type, values } => (inner_type, values),
         _ => unreachable!("Type validation should have been done by eval"),
@@ -62,13 +62,13 @@ pub fn map_impl(
 
 /// Implements filter: keeps only elements where lambda returns true
 /// filter $fn: fn(T) -> bool $list: [T] -> [T]
-#[eval_builtin("filter", "fn(any)->bool, [any]", "[any]")]
-pub fn filter_impl(
-    lambda: &Lambda,
-    list: &Value,
+#[eval_builtin("filter")]
+pub fn filter_impl<T>(
+    lambda: &LambdaType<(T,), Bool>,
+    list: &List<T>,
     local_context: &LocalContext,
     context: &ShadyContext,
-) -> Result<Value> {
+) -> Result<List<T>> {
     let (inner_type, values) = match list {
         Value::List { inner_type, values } => (inner_type, values),
         _ => unreachable!("Type validation should have been done by eval"),
@@ -113,14 +113,14 @@ pub fn filter_impl(
 
 /// Implements reduce: folds a list using a lambda and initial value
 /// reduce $fn: fn(Acc, T) -> Acc $init: Acc $list: [T] -> Acc
-#[eval_builtin("reduce", "fn(any,any)->any, any, [any]", "any")]
-pub fn reduce_impl(
-    lambda: &Lambda,
-    init: &Value,
-    list: &Value,
+#[eval_builtin("reduce")]
+pub fn reduce_impl<Acc, T>(
+    lambda: &LambdaType<(Acc, T), Acc>,
+    init: &Acc,
+    list: &List<T>,
     local_context: &LocalContext,
     context: &ShadyContext,
-) -> Result<Value> {
+) -> Result<Acc> {
     let mut accumulator = init.clone();
 
     let values = match list {
