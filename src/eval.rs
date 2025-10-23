@@ -132,11 +132,6 @@ pub fn build_context_with_limits(
 
     builtins::setup_builtins(&mut builtins);
 
-    // Register higher-order functional primitives (Eval builtins)
-    builtins::functional::setup_map_builtin(&mut builtins);
-    builtins::functional::setup_filter_builtin(&mut builtins);
-    builtins::functional::setup_reduce_builtin(&mut builtins);
-
     ShadyContext {
         filename,
         program,

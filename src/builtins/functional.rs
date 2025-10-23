@@ -2,13 +2,15 @@
 // These are implemented as Eval builtins (special forms) because they need
 // access to the evaluation context to call lambdas.
 
-use crate::ast::{Expr, FnSignature, ParamSpec, Parameter};
+use crate::ast::Expr;
 use crate::error::{Result, ShadyError};
-use crate::eval::{eval_expr_with_type, Builtin, BuiltinIndex, LocalContext, ShadyContext};
+use crate::eval::{eval_expr_with_type, LocalContext, ShadyContext};
 use crate::types::{Type, Value};
+use shady_macros::eval_builtin;
 
 /// Implements map: applies a lambda to each element of a list
 /// map $fn: fn(T) -> R $list: [T] -> [R]
+#[eval_builtin("map", "fn(any)->any, [any]", "[any]")]
 pub fn map_impl(
     arg_exprs: &[Expr],
     local_context: &LocalContext,
@@ -103,6 +105,7 @@ pub fn map_impl(
 
 /// Implements filter: keeps only elements where lambda returns true
 /// filter $fn: fn(T) -> bool $list: [T] -> [T]
+#[eval_builtin("filter", "fn(any)->bool, [any]", "[any]")]
 pub fn filter_impl(
     arg_exprs: &[Expr],
     local_context: &LocalContext,
@@ -204,6 +207,7 @@ pub fn filter_impl(
 
 /// Implements reduce: folds a list using a lambda and initial value
 /// reduce $fn: fn(Acc, T) -> Acc $init: Acc $list: [T] -> Acc
+#[eval_builtin("reduce", "fn(any,any)->any, any, [any]", "any")]
 pub fn reduce_impl(
     arg_exprs: &[Expr],
     local_context: &LocalContext,
@@ -283,80 +287,4 @@ pub fn reduce_impl(
     }
 
     Ok(accumulator)
-}
-
-// Setup functions to register these as Eval builtins
-
-#[allow(clippy::mutable_key_type)]
-pub fn setup_map_builtin(builtins: &mut BuiltinIndex) {
-    let signature = FnSignature {
-        fn_name: "map".to_string(),
-        parameters: vec![
-            Parameter {
-                name: "fn".to_string(),
-                typ: Type::Fn(vec![Type::Any], Box::new(Type::Any)),
-                spec: ParamSpec::default(),
-            },
-            Parameter {
-                name: "list".to_string(),
-                typ: Type::List(Box::new(Type::Any)),
-                spec: ParamSpec::default(),
-            },
-        ],
-        is_public: true,
-        is_infix: false,
-        return_type: Type::List(Box::new(Type::Any)),
-    };
-    builtins.insert(signature, Builtin::Eval(Box::new(map_impl)));
-}
-
-#[allow(clippy::mutable_key_type)]
-pub fn setup_filter_builtin(builtins: &mut BuiltinIndex) {
-    let signature = FnSignature {
-        fn_name: "filter".to_string(),
-        parameters: vec![
-            Parameter {
-                name: "fn".to_string(),
-                typ: Type::Fn(vec![Type::Any], Box::new(Type::Bool)),
-                spec: ParamSpec::default(),
-            },
-            Parameter {
-                name: "list".to_string(),
-                typ: Type::List(Box::new(Type::Any)),
-                spec: ParamSpec::default(),
-            },
-        ],
-        is_public: true,
-        is_infix: false,
-        return_type: Type::List(Box::new(Type::Any)),
-    };
-    builtins.insert(signature, Builtin::Eval(Box::new(filter_impl)));
-}
-
-#[allow(clippy::mutable_key_type)]
-pub fn setup_reduce_builtin(builtins: &mut BuiltinIndex) {
-    let signature = FnSignature {
-        fn_name: "reduce".to_string(),
-        parameters: vec![
-            Parameter {
-                name: "fn".to_string(),
-                typ: Type::Fn(vec![Type::Any, Type::Any], Box::new(Type::Any)),
-                spec: ParamSpec::default(),
-            },
-            Parameter {
-                name: "init".to_string(),
-                typ: Type::Any,
-                spec: ParamSpec::default(),
-            },
-            Parameter {
-                name: "list".to_string(),
-                typ: Type::List(Box::new(Type::Any)),
-                spec: ParamSpec::default(),
-            },
-        ],
-        is_public: true,
-        is_infix: false,
-        return_type: Type::Any,
-    };
-    builtins.insert(signature, Builtin::Eval(Box::new(reduce_impl)));
 }

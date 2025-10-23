@@ -23,5 +23,6 @@ mod str;
 use crate::builtins::str::*;
 
 pub mod functional;
+use crate::builtins::functional::*;
 
 setup_builtins!();

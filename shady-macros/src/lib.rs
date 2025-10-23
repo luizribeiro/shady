@@ -11,6 +11,7 @@ use syn::{parse_macro_input, AttributeArgs, ItemFn, NestedMeta};
 
 lazy_static! {
     static ref ALL_BUILTINS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    static ref ALL_EVAL_BUILTINS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 }
 
 struct Builtin {
@@ -197,9 +198,132 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
     .into()
 }
 
+/// Macro for Eval builtins (special forms) that need access to unevaluated expressions
+/// Usage: #[eval_builtin("name", param_types, return_type)]
+/// Where param_types is a string like "fn(any)->any, [any]" representing the signature
+#[proc_macro_attribute]
+pub fn eval_builtin(args: TokenStream, input: TokenStream) -> TokenStream {
+    let orig_fun = parse_macro_input!(input as ItemFn);
+    let macro_args = parse_macro_input!(args as AttributeArgs);
+
+    let orig_fun_ident = &orig_fun.sig.ident;
+
+    // Parse macro arguments: fn_name, param_spec, return_type
+    let mut fn_name = orig_fun_ident.to_string();
+    let mut param_spec = String::new();
+    let mut return_spec = String::new();
+
+    for (i, arg) in macro_args.iter().enumerate() {
+        if let syn::NestedMeta::Lit(syn::Lit::Str(s)) = arg {
+            match i {
+                0 => fn_name = s.value(),
+                1 => param_spec = s.value(),
+                2 => return_spec = s.value(),
+                _ => {}
+            }
+        }
+    }
+
+    let setup_fname = format!("setup_{}_builtin", orig_fun_ident);
+    ALL_EVAL_BUILTINS
+        .lock()
+        .expect("could not obtain lock")
+        .push(setup_fname.clone());
+
+    let setup_ident = syn::Ident::new(&setup_fname, orig_fun_ident.span());
+
+    // Parse parameter specs like "fn(any)->any, [any]"
+    let param_specs: Vec<&str> = param_spec.split(',').map(|s| s.trim()).collect();
+
+    let mut params_prog = quote! {};
+    for (i, spec) in param_specs.iter().enumerate() {
+        let param_name = format!("arg{}", i);
+        let param_type_code = parse_type_spec(spec);
+
+        params_prog.extend(quote! {
+            crate::ast::Parameter {
+                name: #param_name.to_string(),
+                typ: #param_type_code,
+                spec: crate::ast::ParamSpec::default(),
+            },
+        });
+    }
+
+    let return_type_code = parse_type_spec(&return_spec);
+
+    quote! {
+        #orig_fun
+
+        #[allow(clippy::mutable_key_type)]
+        pub fn #setup_ident(builtins: &mut crate::eval::BuiltinIndex) {
+            let signature = crate::ast::FnSignature {
+                fn_name: #fn_name.to_string(),
+                parameters: vec![
+                    #params_prog
+                ],
+                is_public: true,
+                is_infix: false,
+                return_type: #return_type_code,
+            };
+            builtins.insert(
+                signature,
+                crate::eval::Builtin::Eval(Box::new(#orig_fun_ident)),
+            );
+        }
+    }
+    .into()
+}
+
+/// Parse a type spec string like "int", "[any]", "fn(any)->bool" into Type code
+fn parse_type_spec(spec: &str) -> proc_macro2::TokenStream {
+    let spec = spec.trim();
+
+    // Check for list type [T]
+    if spec.starts_with('[') && spec.ends_with(']') {
+        let inner = &spec[1..spec.len()-1];
+        let inner_type = parse_type_spec(inner);
+        return quote! { crate::types::Type::List(Box::new(#inner_type)) };
+    }
+
+    // Check for function type fn(T1, T2, ...) -> R
+    if spec.starts_with("fn(") {
+        if let Some(arrow_pos) = spec.find(")->") {
+            let params_str = &spec[3..arrow_pos];
+            let return_str = &spec[arrow_pos+3..];
+
+            let param_types: Vec<proc_macro2::TokenStream> = if params_str.is_empty() {
+                vec![]
+            } else {
+                params_str.split(',')
+                    .map(|s| parse_type_spec(s.trim()))
+                    .collect()
+            };
+
+            let return_type = parse_type_spec(return_str.trim());
+
+            return quote! {
+                crate::types::Type::Fn(
+                    vec![#(#param_types),*],
+                    Box::new(#return_type)
+                )
+            };
+        }
+    }
+
+    // Simple types
+    match spec {
+        "int" => quote! { crate::types::Type::Int },
+        "str" => quote! { crate::types::Type::Str },
+        "bool" => quote! { crate::types::Type::Bool },
+        "proc" => quote! { crate::types::Type::Proc },
+        "any" => quote! { crate::types::Type::Any },
+        _ => quote! { crate::types::Type::Any },
+    }
+}
+
 #[proc_macro]
 pub fn setup_builtins(_item: TokenStream) -> TokenStream {
-    let setup_prog = ALL_BUILTINS
+    let pure_builtins = ALL_BUILTINS
         .lock()
         .expect("could not obtain lock")
         .iter()
@@ -209,8 +333,27 @@ pub fn setup_builtins(_item: TokenStream) -> TokenStream {
                 #ident(builtins);
             }
         })
-        .reduce(|a, b| quote! { #a #b })
-        .expect("failed to generate setup_builtins");
+        .reduce(|a, b| quote! { #a #b });
+
+    let eval_builtins = ALL_EVAL_BUILTINS
+        .lock()
+        .expect("could not obtain lock")
+        .iter()
+        .map(|s| {
+            let ident = syn::Ident::new(s, proc_macro2::Span::call_site());
+            quote! {
+                #ident(builtins);
+            }
+        })
+        .reduce(|a, b| quote! { #a #b });
+
+    let setup_prog = match (pure_builtins, eval_builtins) {
+        (Some(pure), Some(eval)) => quote! { #pure #eval },
+        (Some(pure), None) => pure,
+        (None, Some(eval)) => eval,
+        (None, None) => panic!("No builtins found"),
+    };
+
     quote! {
         #[allow(clippy::mutable_key_type)]
         pub fn setup_builtins(builtins: &mut BuiltinIndex) {
