@@ -65,6 +65,7 @@ module.exports = grammar({
       $.type_bool,
       $.type_proc,
       $.type_list,
+      $.type_fn,
     ),
 
     type_int: $ => 'int',
@@ -72,6 +73,17 @@ module.exports = grammar({
     type_bool: $ => 'bool',
     type_proc: $ => 'proc',
     type_list: $ => seq('[', field('element_type', $.typ), ']'),
+    type_fn: $ => seq(
+      'fn',
+      '(',
+      optional(seq(
+        field('param_type', $.typ),
+        repeat(seq(',', field('param_type', $.typ))),
+      )),
+      ')',
+      '->',
+      field('return_type', $.typ),
+    ),
 
     // Parameters
     parameter: $ => seq(
@@ -173,6 +185,7 @@ module.exports = grammar({
       $.variable,
       $.list,
       $.block_expr,
+      $.lambda_expr,
       seq('(', $.expr, ')'),
     ),
 
@@ -274,5 +287,14 @@ module.exports = grammar({
     ),
 
     custom_infix_op: $ => seq('`', $.token, '`'),
+
+    // Lambda expressions: λ $x $y -> body or lambda $x: int $y: str -> body
+    lambda_expr: $ => seq(
+      choice('λ', 'lambda'),
+      repeat1(field('parameter', $.parameter)),
+      '->',
+      optional(seq(field('return_type', $.typ), '=')),
+      field('body', $.expr),
+    ),
   },
 });

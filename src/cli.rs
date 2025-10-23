@@ -49,6 +49,7 @@ fn get_command(context: &ShadyContext) -> clap::Command {
                 // TODO: make it impossible to have public methods with certain types as a
                 // parameter
                 Type::Proc => unreachable!(),
+                Type::Fn(_, _) => unreachable!(),
                 Type::Any => unreachable!(),
             };
             if let Some(default) = &param.spec.default_value {
@@ -342,7 +343,10 @@ mod tests {
         let help_output = cmd.render_help().to_string();
 
         // Should show both subcommands
-        assert!(help_output.contains("main"), "Help should show main command");
+        assert!(
+            help_output.contains("main"),
+            "Help should show main command"
+        );
         assert!(
             help_output.contains("greet"),
             "Help should show greet command"
@@ -369,10 +373,7 @@ mod tests {
         let subcommand = cmd.find_subcommand("greet").unwrap();
         let help_output = subcommand.clone().render_help().to_string();
 
-        assert!(
-            help_output.contains("<name>"),
-            "Should show name argument"
-        );
+        assert!(help_output.contains("<name>"), "Should show name argument");
         assert!(
             help_output.contains("<count>"),
             "Should show count argument"

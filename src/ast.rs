@@ -250,13 +250,13 @@ pub struct FnDefinition {
     pub expr: Expr,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StringSegment {
     Text(String),
     Interpolated(Box<Expr>),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     Value(Value, Span),
     Variable(String, Span),
@@ -284,6 +284,12 @@ pub enum Expr {
         segments: Vec<StringSegment>,
         span: Span,
     },
+    Lambda {
+        parameters: Vec<(String, Type)>, // (name, type)
+        body: Box<Expr>,
+        return_type: Option<Type>,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -297,6 +303,7 @@ impl Expr {
             Expr::List { span, .. } => span,
             Expr::Block { span, .. } => span,
             Expr::InterpolatedString { span, .. } => span,
+            Expr::Lambda { span, .. } => span,
         }
     }
 }
@@ -327,6 +334,20 @@ fn parse_type(node: Node, _source: &[u8]) -> Type {
             let element_type = child_by_field(&node, "element_type")
                 .expect("type_list must have element_type field");
             Type::List(Box::new(parse_type(element_type, _source)))
+        }
+        "type_fn" => {
+            // Parse function type: fn(T1, T2) -> R
+            let mut param_types = Vec::new();
+            let mut cursor = node.walk();
+            for param_node in node.children_by_field_name("param_type", &mut cursor) {
+                param_types.push(parse_type(param_node, _source));
+            }
+
+            let return_type =
+                child_by_field(&node, "return_type").expect("type_fn must have return_type field");
+            let return_type = Box::new(parse_type(return_type, _source));
+
+            Type::Fn(param_types, return_type)
         }
         "typ" => {
             // typ is a wrapper node, get the actual type child
@@ -415,13 +436,15 @@ fn parse_interpolated_string(str_node: Node, source: &[u8]) -> Vec<StringSegment
                 let unescaped = snailquote::unescape(&format!("\"{}\"", text))
                     .expect("escape sequence parse error");
                 // Remove the surrounding quotes that we added
-                let unescaped = &unescaped[1..unescaped.len()-1];
+                let unescaped = &unescaped[1..unescaped.len() - 1];
                 segments.push(StringSegment::Text(unescaped.to_string()));
             }
             "interpolation" => {
-                let expr_node = child_by_field(&child, "expr")
-                    .expect("interpolation must have expr field");
-                segments.push(StringSegment::Interpolated(Box::new(parse_expr(expr_node, source))));
+                let expr_node =
+                    child_by_field(&child, "expr").expect("interpolation must have expr field");
+                segments.push(StringSegment::Interpolated(Box::new(parse_expr(
+                    expr_node, source,
+                ))));
             }
             _ => {}
         }
@@ -502,6 +525,40 @@ fn parse_block(node: Node, source: &[u8]) -> Expr {
     Expr::Block { expressions, span }
 }
 
+fn parse_lambda(node: Node, source: &[u8]) -> Expr {
+    let span = Span::from_node(&node);
+    let mut parameters: Vec<(String, Type)> = Vec::new();
+
+    // Parse parameters
+    let mut cursor = node.walk();
+    for param_node in node.children_by_field_name("parameter", &mut cursor) {
+        let var_node = child_by_field(&param_node, "name").expect("parameter must have name");
+        let var_text = node_text(&var_node, source);
+        // Variable includes $, so skip it
+        let name = var_text[1..].to_string();
+
+        let typ = child_by_field(&param_node, "type")
+            .map(|n| parse_type(n, source))
+            .unwrap_or(Type::Any); // default to Any for type inference
+
+        parameters.push((name, typ));
+    }
+
+    // Parse optional return type
+    let return_type = child_by_field(&node, "return_type").map(|n| parse_type(n, source));
+
+    // Parse body
+    let body_node = child_by_field(&node, "body").expect("lambda_expr must have body");
+    let body = Box::new(parse_expr(body_node, source));
+
+    Expr::Lambda {
+        parameters,
+        body,
+        return_type,
+        span,
+    }
+}
+
 fn parse_expr(node: Node, source: &[u8]) -> Expr {
     match node.kind() {
         // Primary expressions
@@ -535,6 +592,7 @@ fn parse_expr(node: Node, source: &[u8]) -> Expr {
         "fn_call" => parse_call(node, source),
         "list" => parse_list(node, source),
         "block_expr" => parse_block(node, source),
+        "lambda_expr" => parse_lambda(node, source),
         "if_expr" => parse_if(node, source),
 
         // Binary expressions
@@ -1033,13 +1091,17 @@ mod tests {
                     Expr::InterpolatedString { segments: s2, .. },
                 ) => {
                     s1.len() == s2.len()
-                        && s1.iter().zip(s2.iter()).all(|(seg1, seg2)| match (seg1, seg2) {
-                            (StringSegment::Text(t1), StringSegment::Text(t2)) => t1 == t2,
-                            (StringSegment::Interpolated(e1), StringSegment::Interpolated(e2)) => {
-                                e1.eq_ignore_spans(e2)
-                            }
-                            _ => false,
-                        })
+                        && s1
+                            .iter()
+                            .zip(s2.iter())
+                            .all(|(seg1, seg2)| match (seg1, seg2) {
+                                (StringSegment::Text(t1), StringSegment::Text(t2)) => t1 == t2,
+                                (
+                                    StringSegment::Interpolated(e1),
+                                    StringSegment::Interpolated(e2),
+                                ) => e1.eq_ignore_spans(e2),
+                                _ => false,
+                            })
                 }
                 _ => false,
             }

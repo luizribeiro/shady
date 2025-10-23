@@ -374,6 +374,42 @@
     }
   },
   {
+    "type": "lambda_expr",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "expr",
+            "named": true
+          }
+        ]
+      },
+      "parameter": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "parameter",
+            "named": true
+          }
+        ]
+      },
+      "return_type": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "typ",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "list",
     "named": true,
     "fields": {},
@@ -527,6 +563,10 @@
           "named": true
         },
         {
+          "type": "lambda_expr",
+          "named": true
+        },
+        {
           "type": "list",
           "named": true
         },
@@ -596,6 +636,10 @@
           "named": true
         },
         {
+          "type": "type_fn",
+          "named": true
+        },
+        {
           "type": "type_int",
           "named": true
         },
@@ -612,6 +656,32 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "type_fn",
+    "named": true,
+    "fields": {
+      "param_type": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "typ",
+            "named": true
+          }
+        ]
+      },
+      "return_type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "typ",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -785,6 +855,10 @@
     "named": false
   },
   {
+    "type": "fn",
+    "named": false
+  },
+  {
     "type": "if",
     "named": false
   },
@@ -795,6 +869,10 @@
   {
     "type": "int",
     "named": true
+  },
+  {
+    "type": "lambda",
+    "named": false
   },
   {
     "type": "multiline_comment",
@@ -850,6 +928,10 @@
   },
   {
     "type": "}",
+    "named": false
+  },
+  {
+    "type": "λ",
     "named": false
   }
 ]

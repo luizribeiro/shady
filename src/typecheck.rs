@@ -1,4 +1,6 @@
-use crate::ast::{Expr, FnDefinition, FnSignature, Parameter, ParamSpec, ProgramAST, StringSegment};
+use crate::ast::{
+    Expr, FnDefinition, FnSignature, ParamSpec, Parameter, ProgramAST, StringSegment,
+};
 use crate::error::{Result, ShadyError};
 use crate::eval::BuiltinIndex;
 use crate::types::Type;
@@ -8,6 +10,12 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct TypeEnv {
     vars: HashMap<String, Type>,
+}
+
+impl Default for TypeEnv {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TypeEnv {
@@ -68,14 +76,14 @@ impl<'a> TypeChecker<'a> {
 
         // Check that body type matches declared return type (if not Any)
         // Note: Can't use != because Type::Any equals everything in PartialEq
-        if !matches!(fun.signature.return_type, Type::Any) {
-            if !self.types_compatible(&body_type, &fun.signature.return_type) {
-                return Err(ShadyError::TypeMismatch {
-                    expected: fun.signature.return_type.to_string(),
-                    actual: body_type.to_string(),
-                    span: fun.expr.span().to_source_span(),
-                });
-            }
+        if !matches!(fun.signature.return_type, Type::Any)
+            && !self.types_compatible(&body_type, &fun.signature.return_type)
+        {
+            return Err(ShadyError::TypeMismatch {
+                expected: fun.signature.return_type.to_string(),
+                actual: body_type.to_string(),
+                span: fun.expr.span().to_source_span(),
+            });
         }
 
         Ok(())
@@ -87,12 +95,12 @@ impl<'a> TypeChecker<'a> {
             Expr::Value(val, _) => Ok(val.get_type()),
 
             Expr::Variable(name, span) => {
-                env.get(name).cloned().ok_or_else(|| {
-                    ShadyError::VariableNotFound {
+                env.get(name)
+                    .cloned()
+                    .ok_or_else(|| ShadyError::VariableNotFound {
                         name: name.clone(),
                         span: span.to_source_span(),
-                    }
-                })
+                    })
             }
 
             Expr::Call {
@@ -207,6 +215,43 @@ impl<'a> TypeChecker<'a> {
                 }
                 // String interpolation always returns string
                 Ok(Type::Str)
+            }
+
+            Expr::Lambda {
+                parameters,
+                body,
+                return_type,
+                ..
+            } => {
+                // Create new environment with lambda parameters
+                let mut lambda_env = env.clone();
+                let param_types: Vec<Type> = parameters
+                    .iter()
+                    .map(|(name, typ)| {
+                        lambda_env.insert(name.clone(), typ.clone());
+                        typ.clone()
+                    })
+                    .collect();
+
+                // Infer body type
+                let body_type = self.infer_expr_type(&lambda_env, body)?;
+
+                // Check return type if specified
+                let ret_type = if let Some(ret) = return_type {
+                    if !self.types_compatible(&body_type, ret) {
+                        return Err(ShadyError::TypeMismatch {
+                            expected: ret.to_string(),
+                            actual: body_type.to_string(),
+                            span: body.span().to_source_span(),
+                        });
+                    }
+                    ret.clone()
+                } else {
+                    body_type
+                };
+
+                // Return function type: fn(param_types) -> return_type
+                Ok(Type::Fn(param_types, Box::new(ret_type)))
             }
         }
     }
@@ -368,7 +413,9 @@ mod tests {
         let result = typecheck("bad $a: int -> str = $a + 1;");
         assert!(result.is_err());
         match result.unwrap_err() {
-            ShadyError::TypeMismatch { expected, actual, .. } => {
+            ShadyError::TypeMismatch {
+                expected, actual, ..
+            } => {
                 assert_eq!(expected, "str");
                 assert_eq!(actual, "int");
             }

@@ -12,6 +12,7 @@ pub enum Type {
     Bool,
     List(Box<Type>),
     Proc,
+    Fn(Vec<Type>, Box<Type>), // Function type: Fn([param types], return type)
     Any,
 }
 
@@ -26,7 +27,14 @@ impl Hash for Type {
                 t.hash(state);
             }
             Type::Proc => state.write_u8(4),
-            Type::Any => state.write_u8(5),
+            Type::Fn(params, ret) => {
+                state.write_u8(5);
+                for p in params {
+                    p.hash(state);
+                }
+                ret.hash(state);
+            }
+            Type::Any => state.write_u8(6),
         }
     }
 }
@@ -39,6 +47,11 @@ impl PartialEq for Type {
             (Type::Bool, Type::Bool) => true,
             (Type::List(a), Type::List(b)) => a == b,
             (Type::Proc, Type::Proc) => true,
+            (Type::Fn(params1, ret1), Type::Fn(params2, ret2)) => {
+                params1.len() == params2.len()
+                    && params1.iter().zip(params2.iter()).all(|(p1, p2)| p1 == p2)
+                    && ret1 == ret2
+            }
             (Type::Any, _) => true,
             (_, Type::Any) => true,
             _ => false,
@@ -54,6 +67,16 @@ impl Display for Type {
             Type::Bool => write!(f, "bool"),
             Type::List(t) => write!(f, "[{}]", t),
             Type::Proc => write!(f, "proc"),
+            Type::Fn(params, ret) => {
+                write!(f, "fn(")?;
+                for (i, param) in params.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", param)?;
+                }
+                write!(f, ") -> {}", ret)
+            }
             Type::Any => write!(f, "any"),
         }
     }
@@ -96,6 +119,18 @@ impl PartialEq for Proc {
     }
 }
 
+use std::collections::HashMap;
+
+/// Lambda function (closure) value
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lambda {
+    pub parameters: Vec<String>,
+    pub param_types: Vec<Type>,
+    pub return_type: Type,
+    pub body: Rc<crate::ast::Expr>,
+    pub captured_env: HashMap<String, Value>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     Int(i64),
@@ -106,6 +141,7 @@ pub enum Value {
         values: Vec<Value>,
     },
     Proc(Proc),
+    Lambda(Lambda),
 }
 
 impl Value {
@@ -116,6 +152,10 @@ impl Value {
             Value::Bool(_) => Type::Bool,
             Value::List { inner_type, .. } => Type::List(Box::new(inner_type.clone())),
             Value::Proc { .. } => Type::Proc,
+            Value::Lambda(lambda) => Type::Fn(
+                lambda.param_types.clone(),
+                Box::new(lambda.return_type.clone()),
+            ),
         }
     }
 }
@@ -142,6 +182,16 @@ impl Display for Value {
                 s
             }
             Value::Proc { .. } => "<proc object>".to_string(),
+            Value::Lambda(lambda) => format!(
+                "<λ function: fn({}) -> {}>",
+                lambda
+                    .param_types
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                lambda.return_type
+            ),
         };
         write!(f, "{out}")
     }
@@ -340,6 +390,10 @@ pub fn from_string(typ: &Type, s: &str) -> Result<Value> {
         Type::Proc => Err(ShadyError::InvalidConversion {
             from: "string".to_string(),
             to: "proc".to_string(),
+        }),
+        Type::Fn(_, _) => Err(ShadyError::InvalidConversion {
+            from: "string".to_string(),
+            to: "function".to_string(),
         }),
         Type::Any => Err(ShadyError::InvalidConversion {
             from: "string".to_string(),

@@ -267,6 +267,34 @@ pub fn eval_expr_with_type(
             }
             Ok(Value::Str(result))
         }
+        Expr::Lambda {
+            parameters,
+            body,
+            return_type,
+            ..
+        } => {
+            // Lambda evaluation: capture the current environment
+            let captured_env = local_context.vars.clone();
+
+            // Extract parameter names and types
+            let param_names: Vec<String> =
+                parameters.iter().map(|(name, _)| name.clone()).collect();
+            let param_types: Vec<Type> = parameters.iter().map(|(_, typ)| typ.clone()).collect();
+
+            // Determine return type (use provided or infer from expected_type or default to Any)
+            let ret_type = return_type
+                .clone()
+                .or_else(|| expected_type.cloned())
+                .unwrap_or(Type::Any);
+
+            Ok(Value::Lambda(crate::types::Lambda {
+                parameters: param_names,
+                param_types,
+                return_type: ret_type,
+                body: Rc::new((**body).clone()),
+                captured_env,
+            }))
+        }
     }
 }
 
@@ -280,6 +308,91 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
         } => (fn_name, arguments, *is_infix, span),
         _ => return Err(ShadyError::EvalError("not a call".to_string())),
     };
+
+    // Handle higher-order functions that work with lambdas
+    // These are special because they need to evaluate lambdas, which requires eval access
+    match fn_name.as_str() {
+        "map" if arg_exprs.len() == 2 => {
+            return eval_map(local_context, context, &arg_exprs[0], &arg_exprs[1]);
+        }
+        "filter" if arg_exprs.len() == 2 => {
+            return eval_filter(local_context, context, &arg_exprs[0], &arg_exprs[1]);
+        }
+        "reduce" if arg_exprs.len() == 3 => {
+            return eval_reduce(
+                local_context,
+                context,
+                &arg_exprs[0],
+                &arg_exprs[1],
+                &arg_exprs[2],
+            );
+        }
+        _ => {}
+    }
+
+    // Check if fn_name is a variable containing a lambda
+    if let Some(Value::Lambda(lambda)) = local_context.vars.get(fn_name) {
+        // Evaluate arguments
+        let arguments: Vec<Value> = arg_exprs
+            .iter()
+            .enumerate()
+            .map(|(i, arg)| {
+                let expected = lambda.param_types.get(i);
+                eval_expr_with_type(local_context, context, arg, expected)
+            })
+            .collect::<Result<Vec<Value>>>()?;
+
+        // Check argument count
+        if arguments.len() != lambda.parameters.len() {
+            return Err(ShadyError::FunctionSignatureMismatch {
+                name: "<lambda>".to_string(),
+                arg_types: format!(
+                    "expected {} arguments, got {}",
+                    lambda.parameters.len(),
+                    arguments.len()
+                ),
+                span: call_span.to_source_span(),
+            });
+        }
+
+        // Check argument types
+        for (i, (arg, expected_type)) in arguments.iter().zip(&lambda.param_types).enumerate() {
+            if arg.get_type() != *expected_type && *expected_type != Type::Any {
+                return Err(ShadyError::FunctionSignatureMismatch {
+                    name: "<lambda>".to_string(),
+                    arg_types: format!(
+                        "argument {} has wrong type: expected {}, got {}",
+                        i,
+                        expected_type,
+                        arg.get_type()
+                    ),
+                    span: arg_exprs
+                        .get(i)
+                        .map(|e| e.span().to_source_span())
+                        .unwrap_or_else(|| call_span.to_source_span()),
+                });
+            }
+        }
+
+        // Call the lambda: create new context with captured environment + parameters
+        let mut lambda_vars = lambda.captured_env.clone();
+        for (i, param_name) in lambda.parameters.iter().enumerate() {
+            lambda_vars.insert(param_name.clone(), arguments[i].clone());
+        }
+
+        let lambda_context = LocalContext {
+            vars: lambda_vars,
+            depth: local_context.depth + 1,
+        };
+
+        // Evaluate lambda body
+        return eval_expr_with_type(
+            &lambda_context,
+            context,
+            &lambda.body,
+            Some(&lambda.return_type),
+        );
+    }
 
     // Try to find the function to get parameter types
     let param_types: Option<Vec<Type>> = {
@@ -386,6 +499,257 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
     let program = signature.fn_name;
     let args = arguments.iter().map(|a| a.to_string()).collect();
     Ok(Value::Proc(spawn(context, program, args)?))
+}
+
+/// Implements map: applies a lambda to each element of a list
+/// map $fn: fn(T) -> R $list: [T] -> [R]
+fn eval_map(
+    local_context: &LocalContext,
+    context: &ShadyContext,
+    lambda_expr: &Expr,
+    list_expr: &Expr,
+) -> Result<Value> {
+    // Evaluate the lambda
+    let lambda_val = eval_expr_with_type(local_context, context, lambda_expr, None)?;
+    let lambda = match lambda_val {
+        Value::Lambda(l) => l,
+        _ => {
+            return Err(ShadyError::TypeMismatch {
+                expected: "lambda function".to_string(),
+                actual: format!("{}", lambda_val.get_type()),
+                span: lambda_expr.span().to_source_span(),
+            })
+        }
+    };
+
+    // Check that lambda takes exactly one parameter
+    if lambda.parameters.len() != 1 {
+        return Err(ShadyError::FunctionSignatureMismatch {
+            name: "map".to_string(),
+            arg_types: format!(
+                "map requires a lambda with 1 parameter, got {}",
+                lambda.parameters.len()
+            ),
+            span: lambda_expr.span().to_source_span(),
+        });
+    }
+
+    // Evaluate the list
+    let list_val = eval_expr_with_type(local_context, context, list_expr, None)?;
+    let (_inner_type, values) = match list_val {
+        Value::List { inner_type, values } => (inner_type, values),
+        _ => {
+            return Err(ShadyError::TypeMismatch {
+                expected: "list".to_string(),
+                actual: format!("{}", list_val.get_type()),
+                span: list_expr.span().to_source_span(),
+            })
+        }
+    };
+
+    // Apply lambda to each element
+    let mut result_values = Vec::new();
+    let mut result_type: Option<Type> = None;
+
+    for value in values {
+        // Create context with captured environment + parameter binding
+        let mut lambda_vars = lambda.captured_env.clone();
+        lambda_vars.insert(lambda.parameters[0].clone(), value);
+
+        let lambda_context = LocalContext {
+            vars: lambda_vars,
+            depth: local_context.depth + 1,
+        };
+
+        // Evaluate lambda body
+        let result = eval_expr_with_type(
+            &lambda_context,
+            context,
+            &lambda.body,
+            Some(&lambda.return_type),
+        )?;
+
+        // Determine result type from first element
+        if result_type.is_none() {
+            result_type = Some(result.get_type());
+        }
+
+        result_values.push(result);
+    }
+
+    // Handle empty list case
+    let final_type = result_type.unwrap_or_else(|| lambda.return_type.clone());
+
+    Ok(Value::List {
+        inner_type: final_type,
+        values: result_values,
+    })
+}
+
+/// Implements filter: keeps only elements where lambda returns true
+/// filter $fn: fn(T) -> bool $list: [T] -> [T]
+fn eval_filter(
+    local_context: &LocalContext,
+    context: &ShadyContext,
+    lambda_expr: &Expr,
+    list_expr: &Expr,
+) -> Result<Value> {
+    // Evaluate the lambda
+    let lambda_val = eval_expr_with_type(local_context, context, lambda_expr, None)?;
+    let lambda = match lambda_val {
+        Value::Lambda(l) => l,
+        _ => {
+            return Err(ShadyError::TypeMismatch {
+                expected: "lambda function".to_string(),
+                actual: format!("{}", lambda_val.get_type()),
+                span: lambda_expr.span().to_source_span(),
+            })
+        }
+    };
+
+    // Check that lambda takes exactly one parameter
+    if lambda.parameters.len() != 1 {
+        return Err(ShadyError::FunctionSignatureMismatch {
+            name: "filter".to_string(),
+            arg_types: format!(
+                "filter requires a lambda with 1 parameter, got {}",
+                lambda.parameters.len()
+            ),
+            span: lambda_expr.span().to_source_span(),
+        });
+    }
+
+    // Check that lambda returns bool
+    if lambda.return_type != Type::Bool && lambda.return_type != Type::Any {
+        return Err(ShadyError::TypeMismatch {
+            expected: "bool".to_string(),
+            actual: format!("{}", lambda.return_type),
+            span: lambda_expr.span().to_source_span(),
+        });
+    }
+
+    // Evaluate the list
+    let list_val = eval_expr_with_type(local_context, context, list_expr, None)?;
+    let (inner_type, values) = match list_val {
+        Value::List { inner_type, values } => (inner_type, values),
+        _ => {
+            return Err(ShadyError::TypeMismatch {
+                expected: "list".to_string(),
+                actual: format!("{}", list_val.get_type()),
+                span: list_expr.span().to_source_span(),
+            })
+        }
+    };
+
+    // Filter elements where lambda returns true
+    let mut result_values = Vec::new();
+
+    for value in values {
+        // Create context with captured environment + parameter binding
+        let mut lambda_vars = lambda.captured_env.clone();
+        lambda_vars.insert(lambda.parameters[0].clone(), value.clone());
+
+        let lambda_context = LocalContext {
+            vars: lambda_vars,
+            depth: local_context.depth + 1,
+        };
+
+        // Evaluate lambda body
+        let result =
+            eval_expr_with_type(&lambda_context, context, &lambda.body, Some(&Type::Bool))?;
+
+        // Check result is bool
+        match result {
+            Value::Bool(true) => result_values.push(value),
+            Value::Bool(false) => {}
+            _ => {
+                return Err(ShadyError::TypeMismatch {
+                    expected: "bool".to_string(),
+                    actual: format!("{}", result.get_type()),
+                    span: lambda_expr.span().to_source_span(),
+                })
+            }
+        }
+    }
+
+    Ok(Value::List {
+        inner_type,
+        values: result_values,
+    })
+}
+
+/// Implements reduce: folds a list using a lambda and initial value
+/// reduce $fn: fn(Acc, T) -> Acc $init: Acc $list: [T] -> Acc
+fn eval_reduce(
+    local_context: &LocalContext,
+    context: &ShadyContext,
+    lambda_expr: &Expr,
+    init_expr: &Expr,
+    list_expr: &Expr,
+) -> Result<Value> {
+    // Evaluate the lambda
+    let lambda_val = eval_expr_with_type(local_context, context, lambda_expr, None)?;
+    let lambda = match lambda_val {
+        Value::Lambda(l) => l,
+        _ => {
+            return Err(ShadyError::TypeMismatch {
+                expected: "lambda function".to_string(),
+                actual: format!("{}", lambda_val.get_type()),
+                span: lambda_expr.span().to_source_span(),
+            })
+        }
+    };
+
+    // Check that lambda takes exactly two parameters (accumulator, element)
+    if lambda.parameters.len() != 2 {
+        return Err(ShadyError::FunctionSignatureMismatch {
+            name: "reduce".to_string(),
+            arg_types: format!(
+                "reduce requires a lambda with 2 parameters (accumulator, element), got {}",
+                lambda.parameters.len()
+            ),
+            span: lambda_expr.span().to_source_span(),
+        });
+    }
+
+    // Evaluate the initial value
+    let mut accumulator = eval_expr_with_type(local_context, context, init_expr, None)?;
+
+    // Evaluate the list
+    let list_val = eval_expr_with_type(local_context, context, list_expr, None)?;
+    let values = match list_val {
+        Value::List { values, .. } => values,
+        _ => {
+            return Err(ShadyError::TypeMismatch {
+                expected: "list".to_string(),
+                actual: format!("{}", list_val.get_type()),
+                span: list_expr.span().to_source_span(),
+            })
+        }
+    };
+
+    // Fold the list
+    for value in values {
+        // Create context with captured environment + parameter bindings
+        let mut lambda_vars = lambda.captured_env.clone();
+        lambda_vars.insert(lambda.parameters[0].clone(), accumulator.clone());
+        lambda_vars.insert(lambda.parameters[1].clone(), value);
+
+        let lambda_context = LocalContext {
+            vars: lambda_vars,
+            depth: local_context.depth + 1,
+        };
+
+        // Evaluate lambda body
+        accumulator = eval_expr_with_type(
+            &lambda_context,
+            context,
+            &lambda.body,
+            Some(&lambda.return_type),
+        )?;
+    }
+
+    Ok(accumulator)
 }
 
 fn spawn(context: &ShadyContext, program: String, args: Vec<String>) -> Result<Proc> {
@@ -1167,5 +1531,386 @@ mod tests {
         // Should successfully execute echo twice and return 42
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Value::Int(42));
+    }
+
+    // Lambda tests - tested through map/filter/reduce and helper functions
+    #[test]
+    fn eval_simple_lambda_with_map() {
+        // Test basic lambda with map
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = first (map (λ $x -> $x + 1) [5]);
+            "#
+            ),
+            Value::Int(6),
+        );
+    }
+
+    #[test]
+    fn eval_lambda_with_keyword() {
+        // Test using 'lambda' keyword instead of λ
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = first (map (lambda $x -> $x * 2) [21]);
+            "#
+            ),
+            Value::Int(42),
+        );
+    }
+
+    #[test]
+    fn eval_lambda_with_type_annotations() {
+        // Test lambda with explicit type annotations
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = first (map (λ $x: int -> int = $x + 1) [41]);
+            "#
+            ),
+            Value::Int(42),
+        );
+    }
+
+    #[test]
+    fn eval_lambda_with_closure() {
+        // Test that lambdas capture variables from their environment
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = make_adder_list 10 [32];
+                make_adder_list $y: int $list: [int] = map (λ $a -> $a + $y) $list;
+            "#
+            ),
+            Value::List {
+                inner_type: Type::Int,
+                values: vec![Value::Int(42)],
+            },
+        );
+    }
+
+    #[test]
+    fn eval_lambda_multi_param_with_reduce() {
+        // Test lambda with multiple parameters using reduce
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = reduce (λ $x $y -> $x + $y) 10 [32];
+            "#
+            ),
+            Value::Int(42),
+        );
+    }
+
+    #[test]
+    fn eval_map_simple() {
+        // Test map with simple lambda
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = map (λ $x -> $x * 2) [1; 2; 3];
+            "#
+            ),
+            Value::List {
+                inner_type: Type::Int,
+                values: vec![Value::Int(2), Value::Int(4), Value::Int(6)],
+            },
+        );
+    }
+
+    #[test]
+    fn eval_map_empty_list() {
+        // Test map on empty list - type inference from lambda return type
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = identity_list (map (λ $x: int -> int = $x * 2) (get_empty_list 0));
+                identity_list $xs: [int] = $xs;
+                get_empty_list $dummy: int -> [int] = [];
+            "#
+            ),
+            Value::List {
+                inner_type: Type::Int,
+                values: vec![],
+            },
+        );
+    }
+
+    #[test]
+    fn eval_map_with_closure() {
+        // Test map with lambda that captures variable
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = map_with_offset 10 [1; 2; 3];
+                map_with_offset $offset: int $list: [int] = map (λ $x -> $x + $offset) $list;
+            "#
+            ),
+            Value::List {
+                inner_type: Type::Int,
+                values: vec![Value::Int(11), Value::Int(12), Value::Int(13)],
+            },
+        );
+    }
+
+    #[test]
+    fn eval_filter_simple() {
+        // Test filter with simple predicate
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = filter (λ $x -> $x > 2) [1; 2; 3; 4; 5];
+            "#
+            ),
+            Value::List {
+                inner_type: Type::Int,
+                values: vec![Value::Int(3), Value::Int(4), Value::Int(5)],
+            },
+        );
+    }
+
+    #[test]
+    fn eval_filter_empty_result() {
+        // Test filter that removes all elements
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = filter (λ $x -> $x > 10) [1; 2; 3];
+            "#
+            ),
+            Value::List {
+                inner_type: Type::Int,
+                values: vec![],
+            },
+        );
+    }
+
+    #[test]
+    fn eval_filter_with_closure() {
+        // Test filter with lambda that captures variable
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = filter_above 3 [1; 2; 3; 4; 5];
+                filter_above $threshold: int $list: [int] = filter (λ $x -> $x > $threshold) $list;
+            "#
+            ),
+            Value::List {
+                inner_type: Type::Int,
+                values: vec![Value::Int(4), Value::Int(5)],
+            },
+        );
+    }
+
+    #[test]
+    fn eval_reduce_simple() {
+        // Test reduce to sum a list
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = reduce (λ $acc $x -> $acc + $x) 0 [1; 2; 3; 4];
+            "#
+            ),
+            Value::Int(10),
+        );
+    }
+
+    #[test]
+    fn eval_reduce_product() {
+        // Test reduce to calculate product
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = reduce (λ $acc $x -> $acc * $x) 1 [2; 3; 4];
+            "#
+            ),
+            Value::Int(24),
+        );
+    }
+
+    #[test]
+    fn eval_reduce_empty_list() {
+        // Test reduce on empty list returns initial value
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = reduce (λ $acc $x -> $acc + $x) 42 (empty_list []);
+                empty_list $xs: [int] = $xs;
+            "#
+            ),
+            Value::Int(42),
+        );
+    }
+
+    #[test]
+    fn eval_reduce_with_closure() {
+        // Test reduce with lambda that captures variable
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = reduce_with_mult 2 [1; 2; 3];
+                reduce_with_mult $multiplier: int $list: [int] = reduce (λ $acc $x -> $acc + ($x * $multiplier)) 0 $list;
+            "#
+            ),
+            Value::Int(12), // (0 + 1*2) + (2*2) + (3*2) = 2 + 4 + 6 = 12
+        );
+    }
+
+    #[test]
+    fn eval_nested_lambdas() {
+        // Test lambda returning another lambda (currying) via map
+        // The outer lambda captures nothing, the inner lambda captures $a
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = first (map (λ $a: int -> first (map (λ $b: int -> $a + $b) [37])) [5]);
+            "#
+            ),
+            Value::Int(42),
+        );
+    }
+
+    #[test]
+    fn eval_chained_higher_order_functions() {
+        // Test combining map, filter, and reduce
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = process_list [1; 2; 3; 4; 5];
+                process_list $nums: [int] = reduce (λ $acc: int $x: int -> $acc + $x) 0 (filter (λ $x: int -> $x > 4) (map (λ $x: int -> $x * 2) $nums));
+            "#
+            ),
+            Value::Int(24), // [1,2,3,4,5] -> map(*2) -> [2,4,6,8,10] -> filter(>4) -> [6,8,10] -> reduce(+) -> 24
+        );
+    }
+
+    #[test]
+    fn eval_lambda_passed_through_function() {
+        // Test passing lambda through a function that applies it twice
+        assert_eq!(
+            eval_script(
+                r#"
+                public main = first (map (λ $x: int -> $x + 1) (map (λ $x: int -> $x + 1) [40]));
+            "#
+            ),
+            Value::Int(42),
+        );
+    }
+
+    #[test]
+    fn eval_map_str() {
+        // Test map on string list (type checking)
+        let script = r#"
+            public main = map (λ $s -> $s + "!") ["hello"; "world"];
+        "#;
+        assert_eq!(
+            eval_script(script),
+            Value::List {
+                inner_type: Type::Str,
+                values: vec![
+                    Value::Str("hello!".to_string()),
+                    Value::Str("world!".to_string()),
+                ],
+            },
+        );
+    }
+
+    // Error case tests for lambdas
+    #[test]
+    fn eval_map_wrong_param_count() {
+        // Test that map rejects lambda with wrong number of parameters
+        let script = r#"
+            public main = map (λ $x $y -> $x + $y) [1; 2; 3];
+        "#;
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::FunctionSignatureMismatch { name, .. } => {
+                assert_eq!(name, "map");
+            }
+            e => panic!("Expected FunctionSignatureMismatch error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_filter_wrong_param_count() {
+        // Test that filter rejects lambda with wrong number of parameters
+        let script = r#"
+            public main = filter (λ $x $y -> $x > $y) [1; 2; 3];
+        "#;
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::FunctionSignatureMismatch { name, .. } => {
+                assert_eq!(name, "filter");
+            }
+            e => panic!("Expected FunctionSignatureMismatch error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_reduce_wrong_param_count() {
+        // Test that reduce rejects lambda with wrong number of parameters
+        let script = r#"
+            public main = reduce (λ $x -> $x + 1) 0 [1; 2; 3];
+        "#;
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::FunctionSignatureMismatch { name, .. } => {
+                assert_eq!(name, "reduce");
+            }
+            e => panic!("Expected FunctionSignatureMismatch error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn eval_lambda_call_wrong_arg_count_via_reduce() {
+        // Test that calling lambda with wrong number of args fails
+        // reduce expects a 2-param lambda, we give it a 1-param lambda
+        let script = r#"
+            public main = reduce (λ $x -> $x + 1) 0 [1; 2; 3];
+        "#;
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShadyError::FunctionSignatureMismatch { name, .. } => {
+                assert_eq!(name, "reduce");
+            }
+            e => panic!("Expected FunctionSignatureMismatch error, got {:?}", e),
+        }
     }
 }
