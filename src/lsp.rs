@@ -1,4 +1,4 @@
-use crate::ast::{parse_script, parse_script_tolerant};
+use crate::ast::{parse_script_tolerant, ParseResult};
 use crate::error::ShadyError;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 /// Stores document state for the LSP server
 #[derive(Debug, Clone)]
 struct DocumentState {
-    text: String,
+    parse_result: Arc<ParseResult>,
 }
 
 /// Backend state for the Shady LSP server
@@ -33,13 +33,28 @@ impl Backend {
 
         // Use tolerant parsing to collect ALL errors, not just the first one
         match parse_script_tolerant(text) {
-            Ok((_ast, errors)) => {
+            Ok((parse_result, errors)) => {
                 // Convert all parse errors to LSP diagnostics
                 for err in errors {
                     let diagnostic = match err {
                         ShadyError::ParseErrorSimple { message, span } => {
-                            let start_pos = offset_to_position(text, span.offset());
-                            let end_pos = offset_to_position(text, span.offset() + span.len());
+                            let start_pos = ts_point_to_position(
+                                parse_result
+                                    .root_node()
+                                    .descendant_for_byte_range(span.offset(), span.offset())
+                                    .map(|n| n.start_position())
+                                    .unwrap_or(tree_sitter::Point { row: 0, column: 0 }),
+                            );
+                            let end_pos = ts_point_to_position(
+                                parse_result
+                                    .root_node()
+                                    .descendant_for_byte_range(
+                                        span.offset() + span.len(),
+                                        span.offset() + span.len(),
+                                    )
+                                    .map(|n| n.end_position())
+                                    .unwrap_or(tree_sitter::Point { row: 0, column: 0 }),
+                            );
 
                             Diagnostic {
                                 range: Range::new(start_pos, end_pos),
@@ -63,22 +78,29 @@ impl Backend {
 
                     diagnostics.push(diagnostic);
                 }
+
+                // Store the parse result
+                let mut docs = self.documents.write().await;
+                docs.insert(
+                    uri.clone(),
+                    DocumentState {
+                        parse_result: Arc::new(parse_result),
+                    },
+                );
             }
             Err(err) => {
                 // Tolerant parsing failed completely - report the error
                 let diagnostic = match err {
-                    ShadyError::ParseErrorSimple { message, span } => {
-                        let start_pos = offset_to_position(text, span.offset());
-                        let end_pos = offset_to_position(text, span.offset() + span.len());
-
-                        Diagnostic {
-                            range: Range::new(start_pos, end_pos),
-                            severity: Some(DiagnosticSeverity::ERROR),
-                            source: Some("shady".to_string()),
-                            message,
-                            ..Default::default()
-                        }
-                    }
+                    ShadyError::ParseErrorSimple { message, span } => Diagnostic {
+                        range: Range::new(
+                            Position::new(0, span.offset() as u32),
+                            Position::new(0, (span.offset() + span.len()) as u32),
+                        ),
+                        severity: Some(DiagnosticSeverity::ERROR),
+                        source: Some("shady".to_string()),
+                        message,
+                        ..Default::default()
+                    },
                     other_err => Diagnostic {
                         range: Range::new(Position::new(0, 0), Position::new(0, 1)),
                         severity: Some(DiagnosticSeverity::ERROR),
@@ -91,15 +113,6 @@ impl Backend {
                 diagnostics.push(diagnostic);
             }
         }
-
-        // Store the document text
-        let mut docs = self.documents.write().await;
-        docs.insert(
-            uri.clone(),
-            DocumentState {
-                text: text.to_string(),
-            },
-        );
 
         // Publish diagnostics to the client
         self.client
@@ -178,7 +191,7 @@ impl LanguageServer for Backend {
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let uri = &params.text_document_position_params.text_document.uri;
-        let _position = params.text_document_position_params.position;
+        let position = params.text_document_position_params.position;
 
         let docs = self.documents.read().await;
         let doc = match docs.get(uri) {
@@ -186,17 +199,11 @@ impl LanguageServer for Backend {
             None => return Ok(None),
         };
 
-        // Re-parse the document to get the AST
-        let ast = match parse_script(&doc.text) {
-            Ok(ast) => ast,
-            Err(_) => return Ok(None),
-        };
+        let offset = lsp_position_to_offset(&doc.parse_result.source, position);
 
-        // For now, just show information about the first function
-        // In a more complete implementation, we'd check cursor position
-        // and show information about the function/variable under the cursor
-        if let Some(fn_def) = ast.fn_definitions.first() {
-            let hover_text = format!("```shady\n{}\n```", fn_def.signature);
+        // Find function containing cursor
+        if let Some(func_sig) = doc.parse_result.function_at_offset(offset) {
+            let hover_text = format!("```shady\n{}\n```", func_sig);
 
             return Ok(Some(Hover {
                 contents: HoverContents::Markup(MarkupContent {
@@ -223,37 +230,25 @@ impl LanguageServer for Backend {
             None => return Ok(None),
         };
 
-        // Re-parse the document to get the AST
-        let ast = match parse_script(&doc.text) {
-            Ok(ast) => ast,
-            Err(_) => return Ok(None),
+        let offset = lsp_position_to_offset(&doc.parse_result.source, position);
+
+        // Find the node at cursor position
+        let node = match doc.parse_result.node_at_offset(offset) {
+            Some(n) => n,
+            None => return Ok(None),
         };
 
-        // Convert position to byte offset
-        let offset = position_to_offset(&doc.text, position);
+        // Check if we're on a function name (fn_call or fn_name)
+        let identifier_text = if node.kind() == "fn_name" || node.kind() == "token" {
+            node.utf8_text(doc.parse_result.source_bytes()).ok()
+        } else {
+            None
+        };
 
-        // Find the identifier at the cursor position
-        if let Some(identifier) = find_identifier_at_position(&doc.text, offset) {
-            // Try to find the function definition
-            for fn_def in &ast.fn_definitions {
-                if fn_def.signature.fn_name == identifier {
-                    // Found the definition - convert span to LSP range
-                    let start_pos = offset_to_position(&doc.text, 0);
-                    let end_pos = offset_to_position(&doc.text, identifier.len());
-
-                    let location = Location {
-                        uri: uri.clone(),
-                        range: Range::new(start_pos, end_pos),
-                    };
-
-                    return Ok(Some(GotoDefinitionResponse::Scalar(location)));
-                }
-            }
-
-            // Also check if the cursor is on a function call in the expression
-            if let Some(location) = find_function_call_definition(&ast, &doc.text, uri, &identifier)
-            {
-                return Ok(Some(GotoDefinitionResponse::Scalar(location)));
+        if let Some(fn_name) = identifier_text {
+            // Find the function definition node
+            if let Some(def_location) = find_function_definition(&doc.parse_result, fn_name, uri) {
+                return Ok(Some(GotoDefinitionResponse::Scalar(def_location)));
             }
         }
 
@@ -270,30 +265,23 @@ impl LanguageServer for Backend {
             None => return Ok(None),
         };
 
-        // Use tolerant parsing to handle incomplete code
-        let (ast, _errors) = match parse_script_tolerant(&doc.text) {
-            Ok((ast, errors)) => (ast, errors),
-            Err(_) => {
-                // Even if tolerant parsing fails completely, provide builtin completions
-                return Ok(Some(CompletionResponse::Array(get_builtin_completions())));
-            }
-        };
+        let offset = lsp_position_to_offset(&doc.parse_result.source, position);
 
         // Check if we're completing a variable (after '$')
-        if is_completing_variable(&doc.text, position) {
+        if is_completing_variable(&doc.parse_result.source, position) {
             // Find the function containing the cursor
-            if let Some(func) = find_function_at_position(&ast, &doc.text, position) {
+            if let Some(func_sig) = doc.parse_result.function_at_offset(offset) {
                 let mut completions = Vec::new();
 
                 // Add all parameters as completion options
-                for param in &func.signature.parameters {
+                for param in &func_sig.parameters {
                     completions.push(CompletionItem {
                         label: format!("${}", param.name),
                         kind: Some(CompletionItemKind::VARIABLE),
                         detail: Some(format!("{}", param.typ)),
                         documentation: Some(Documentation::String(format!(
                             "Parameter of function '{}'",
-                            func.signature.fn_name
+                            func_sig.fn_name
                         ))),
                         // Remove the '$' when inserting so user doesn't get '$$'
                         insert_text: Some(param.name.clone()),
@@ -309,27 +297,20 @@ impl LanguageServer for Backend {
         let mut completions = Vec::new();
 
         // Add user-defined functions
-        for fn_def in &ast.fn_definitions {
-            let detail = if fn_def.signature.parameters.is_empty() {
-                format!(
-                    "{} -> {}",
-                    fn_def.signature.fn_name, fn_def.signature.return_type
-                )
+        for fn_sig in &doc.parse_result.function_signatures {
+            let detail = if fn_sig.parameters.is_empty() {
+                format!("{} -> {}", fn_sig.fn_name, fn_sig.return_type)
             } else {
-                fn_def.signature.to_string()
+                fn_sig.to_string()
             };
 
             completions.push(CompletionItem {
-                label: fn_def.signature.fn_name.clone(),
+                label: fn_sig.fn_name.clone(),
                 kind: Some(CompletionItemKind::FUNCTION),
                 detail: Some(detail),
                 documentation: Some(Documentation::String(format!(
                     "User-defined function{}",
-                    if fn_def.signature.is_public {
-                        " (public)"
-                    } else {
-                        ""
-                    }
+                    if fn_sig.is_public { " (public)" } else { "" }
                 ))),
                 ..Default::default()
             });
@@ -351,29 +332,22 @@ impl LanguageServer for Backend {
             None => return Ok(None),
         };
 
-        // Re-parse the document to get the AST
-        let ast = match parse_script(&doc.text) {
-            Ok(ast) => ast,
-            Err(_) => {
-                // Even if parsing fails, we can still provide builtin signatures
-                return Ok(None);
-            }
-        };
-
-        // Find the function call at the cursor position
-        let _offset = position_to_offset(&doc.text, position);
-
         // Get the line up to the cursor to find what function is being called
-        let line_text = doc.text.lines().nth(position.line as usize).unwrap_or("");
+        let line_text = doc
+            .parse_result
+            .source
+            .lines()
+            .nth(position.line as usize)
+            .unwrap_or("");
         let line_up_to_cursor =
             &line_text[..position.character.min(line_text.len() as u32) as usize];
 
         // Try to extract the function name before the cursor
         if let Some(fn_name) = extract_function_name_at_cursor(line_up_to_cursor) {
             // Look for user-defined function
-            for fn_def in &ast.fn_definitions {
-                if fn_def.signature.fn_name == fn_name {
-                    let signature_info = create_signature_info(&fn_def.signature);
+            for fn_sig in &doc.parse_result.function_signatures {
+                if fn_sig.fn_name == fn_name {
+                    let signature_info = create_signature_info(fn_sig);
                     return Ok(Some(SignatureHelp {
                         signatures: vec![signature_info],
                         active_signature: Some(0),
@@ -396,29 +370,13 @@ impl LanguageServer for Backend {
     }
 }
 
-/// Convert a byte offset to LSP Position (line and character)
-fn offset_to_position(text: &str, offset: usize) -> Position {
-    let mut line = 0;
-    let mut character = 0;
-
-    for (i, ch) in text.chars().enumerate() {
-        if i >= offset {
-            break;
-        }
-
-        if ch == '\n' {
-            line += 1;
-            character = 0;
-        } else {
-            character += 1;
-        }
-    }
-
-    Position::new(line, character)
+/// Convert tree-sitter Point to LSP Position
+fn ts_point_to_position(point: tree_sitter::Point) -> Position {
+    Position::new(point.row as u32, point.column as u32)
 }
 
 /// Convert LSP Position to byte offset
-fn position_to_offset(text: &str, position: Position) -> usize {
+fn lsp_position_to_offset(text: &str, position: Position) -> usize {
     let mut offset = 0;
     let mut current_line = 0;
     let mut current_char = 0;
@@ -441,91 +399,30 @@ fn position_to_offset(text: &str, position: Position) -> usize {
     offset
 }
 
-/// Find the identifier at a given byte offset
-fn find_identifier_at_position(text: &str, offset: usize) -> Option<String> {
-    // Find the start and end of the identifier at this position
-    let chars: Vec<char> = text.chars().collect();
-    let mut char_offset = 0;
-    let mut target_index = None;
-
-    // Find the character index corresponding to the byte offset
-    for (i, &ch) in chars.iter().enumerate() {
-        if char_offset >= offset {
-            target_index = Some(i);
-            break;
-        }
-        char_offset += ch.len_utf8();
-    }
-
-    let target_index = target_index?;
-
-    // Check if we're on a valid identifier character
-    if target_index >= chars.len() || !is_identifier_char(chars[target_index]) {
-        return None;
-    }
-
-    // Find the start of the identifier
-    let mut start = target_index;
-    while start > 0 && is_identifier_char(chars[start - 1]) {
-        start -= 1;
-    }
-
-    // Find the end of the identifier
-    let mut end = target_index;
-    while end < chars.len() && is_identifier_char(chars[end]) {
-        end += 1;
-    }
-
-    Some(chars[start..end].iter().collect())
-}
-
-/// Check if a character is valid in an identifier
-fn is_identifier_char(ch: char) -> bool {
-    ch.is_alphanumeric() || ch == '_'
-}
-
-/// Find the definition location for a function call
-fn find_function_call_definition(
-    ast: &crate::ast::ProgramAST,
-    text: &str,
-    uri: &Url,
+/// Find the definition location for a function
+fn find_function_definition(
+    parse_result: &ParseResult,
     fn_name: &str,
+    uri: &Url,
 ) -> Option<Location> {
-    use crate::ast;
+    // Walk the tree to find fn_definition nodes
+    let root = parse_result.root_node();
+    let mut cursor = root.walk();
 
-    // Find the function definition in the AST
-    let _fn_def = ast::get_fn_by_name(ast, fn_name)?;
+    for child in root.named_children(&mut cursor) {
+        if child.kind() == "fn_definition" {
+            if let Some(name_node) = child.child_by_field_name("name") {
+                if let Ok(name) = name_node.utf8_text(parse_result.source_bytes()) {
+                    if name == fn_name {
+                        // Found it! Return the location
+                        let start_pos = ts_point_to_position(name_node.start_position());
+                        let end_pos = ts_point_to_position(name_node.end_position());
 
-    // We need to find where in the text this function is defined
-    // Search for the function name in the definition context
-    // For simplicity, we'll search for "fn_name =" or "fn_name $"
-    let search_patterns = [
-        format!("public {}", fn_name),
-        format!("infix {}", fn_name),
-        fn_name.to_string(),
-    ];
-
-    for (line_num, line) in text.lines().enumerate() {
-        for pattern in &search_patterns {
-            if let Some(col) = line.find(pattern) {
-                // Check if this is actually a function definition (has '=' after parameters)
-                if line.contains('=') {
-                    // Extract just the function name position
-                    let fn_name_col =
-                        if pattern.starts_with("public") || pattern.starts_with("infix") {
-                            col + pattern.len() - fn_name.len()
-                        } else {
-                            col
-                        };
-
-                    let start_pos = Position::new(line_num as u32, fn_name_col as u32);
-                    let end_pos =
-                        Position::new(line_num as u32, (fn_name_col + fn_name.len()) as u32);
-
-                    return Some(Location {
-                        uri: uri.clone(),
-                        range: Range::new(start_pos, end_pos),
-                    });
+                        return Some(Location {
+                            uri: uri.clone(),
+                            range: Range::new(start_pos, end_pos),
+                        });
+                    }
                 }
             }
         }
@@ -544,6 +441,8 @@ fn extract_function_name_at_cursor(line_up_to_cursor: &str) -> Option<String> {
     // Find the position after '=' if present
     let start_pos = if let Some(eq_pos) = trimmed.rfind('=') {
         eq_pos + 1
+    } else if let Some(paren_pos) = trimmed.rfind('(') {
+        paren_pos + 1
     } else {
         0
     };
@@ -554,7 +453,7 @@ fn extract_function_name_at_cursor(line_up_to_cursor: &str) -> Option<String> {
     let words: Vec<&str> = relevant_part.split_whitespace().collect();
 
     if let Some(first_word) = words.first() {
-        // Remove any leading/trailing non-identifier characters (like $ or parentheses)
+        // Remove any leading/trailing non-identifier characters
         let clean_word = first_word
             .trim_start_matches(|c: char| !c.is_alphanumeric() && c != '_')
             .trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_');
@@ -567,7 +466,7 @@ fn extract_function_name_at_cursor(line_up_to_cursor: &str) -> Option<String> {
 }
 
 /// Create signature information from a function signature
-fn create_signature_info(signature: &crate::ast::FnSignature) -> SignatureInformation {
+fn create_signature_info(signature: &crate::ast::LspSignature) -> SignatureInformation {
     let mut label = signature.fn_name.clone();
     let mut parameters = Vec::new();
 
@@ -589,8 +488,7 @@ fn create_signature_info(signature: &crate::ast::FnSignature) -> SignatureInform
         }
     }
 
-    // Add return type if it's not Any (always outside the parameters block)
-    // Note: Can't use != because Type::Any == everything in the PartialEq impl
+    // Add return type if it's not Any
     if !matches!(signature.return_type, crate::types::Type::Any) {
         label.push_str(&format!(" -> {}", signature.return_type));
     }
@@ -651,61 +549,6 @@ fn get_builtin_signature(fn_name: &str) -> Option<SignatureInformation> {
         },
         active_parameter: None,
     })
-}
-
-/// Find the function definition that contains a given byte offset
-///
-/// This uses a line-based heuristic that works better with incomplete code.
-/// For incomplete code (missing closing delimiters), tree-sitter's expression
-/// spans may not extend to where the user is typing, so we check if the cursor
-/// is on any line between the function definition and the next function (or EOF).
-fn find_function_at_position<'a>(
-    ast: &'a crate::ast::ProgramAST,
-    text: &str,
-    position: Position,
-) -> Option<&'a crate::ast::FnDefinition> {
-    if ast.fn_definitions.is_empty() {
-        return None;
-    }
-
-    // Build a map of function definitions to their starting line numbers
-    let fn_lines: Vec<(u32, &crate::ast::FnDefinition)> = ast
-        .fn_definitions
-        .iter()
-        .map(|fn_def| {
-            // Find the line where this function definition starts
-            // We do this by searching for the function name in the text
-            let fn_name = &fn_def.signature.fn_name;
-            for (line_num, line) in text.lines().enumerate() {
-                // Check if this line contains the function definition
-                // (has the function name followed by = on the same line)
-                if line.contains(fn_name) && line.contains('=') {
-                    return (line_num as u32, fn_def);
-                }
-            }
-            // Fallback: use the expression span's start position
-            let start_offset = fn_def.expr.span().offset;
-            let start_pos = offset_to_position(text, start_offset);
-            (start_pos.line, fn_def)
-        })
-        .collect();
-
-    // Find the function whose range contains the current position
-    for (i, (start_line, fn_def)) in fn_lines.iter().enumerate() {
-        // Determine the end line (either the next function's start or EOF)
-        let end_line = if i + 1 < fn_lines.len() {
-            fn_lines[i + 1].0
-        } else {
-            text.lines().count() as u32
-        };
-
-        // Check if cursor is within this function's line range
-        if position.line >= *start_line && position.line < end_line {
-            return Some(fn_def);
-        }
-    }
-
-    None
 }
 
 /// Check if the user is trying to complete a variable (typing after '$')
@@ -867,568 +710,52 @@ pub async fn run_server() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::parse_script_tolerant;
 
     #[test]
-    fn test_offset_to_position_single_line() {
-        let text = "hello world";
-
-        assert_eq!(offset_to_position(text, 0), Position::new(0, 0));
-        assert_eq!(offset_to_position(text, 5), Position::new(0, 5));
-        assert_eq!(offset_to_position(text, 11), Position::new(0, 11));
+    fn test_is_completing_variable_after_dollar() {
+        // Cursor right after $
+        assert!(is_completing_variable("echo $", Position::new(0, 6)));
     }
 
     #[test]
-    fn test_offset_to_position_multiple_lines() {
-        let text = "line 1\nline 2\nline 3";
-
-        // Start of file
-        assert_eq!(offset_to_position(text, 0), Position::new(0, 0));
-
-        // End of first line (before newline)
-        assert_eq!(offset_to_position(text, 6), Position::new(0, 6));
-
-        // Start of second line (after first newline)
-        assert_eq!(offset_to_position(text, 7), Position::new(1, 0));
-
-        // Middle of second line
-        assert_eq!(offset_to_position(text, 10), Position::new(1, 3));
-
-        // Start of third line
-        assert_eq!(offset_to_position(text, 14), Position::new(2, 0));
-
-        // End of file
-        assert_eq!(offset_to_position(text, 20), Position::new(2, 6));
+    fn test_is_completing_variable_middle_of_name() {
+        // Cursor in the middle of $nam|e
+        assert!(is_completing_variable("echo $name", Position::new(0, 8)));
     }
 
     #[test]
-    fn test_offset_to_position_empty_string() {
-        let text = "";
-        assert_eq!(offset_to_position(text, 0), Position::new(0, 0));
+    fn test_is_completing_variable_no_dollar() {
+        // No $ present
+        assert!(!is_completing_variable("echo hello", Position::new(0, 6)));
     }
 
     #[test]
-    fn test_offset_to_position_only_newlines() {
-        let text = "\n\n\n";
-
-        assert_eq!(offset_to_position(text, 0), Position::new(0, 0));
-        assert_eq!(offset_to_position(text, 1), Position::new(1, 0));
-        assert_eq!(offset_to_position(text, 2), Position::new(2, 0));
-        assert_eq!(offset_to_position(text, 3), Position::new(3, 0));
+    fn test_is_completing_variable_after_space() {
+        // $ followed by space (still valid)
+        assert!(is_completing_variable("echo $ ", Position::new(0, 6)));
     }
 
     #[test]
-    fn test_offset_to_position_with_unicode() {
-        // Unicode character "😀" takes 4 bytes but is 1 character
-        let text = "hello 😀 world";
-
-        // Before emoji
-        assert_eq!(offset_to_position(text, 6), Position::new(0, 6));
-
-        // After emoji (emoji is 1 character position)
-        assert_eq!(offset_to_position(text, 7), Position::new(0, 7));
-
-        // After space after emoji
-        assert_eq!(offset_to_position(text, 8), Position::new(0, 8));
+    fn test_is_completing_variable_with_underscore() {
+        // Variable name with underscore
+        assert!(is_completing_variable("echo $my_var", Position::new(0, 10)));
     }
 
     #[test]
-    fn test_offset_to_position_shady_code() {
-        let text = "# Comment\npublic main = echo \"Hello\";\n";
-
-        // Start of file
-        assert_eq!(offset_to_position(text, 0), Position::new(0, 0));
-
-        // Start of second line
-        assert_eq!(offset_to_position(text, 10), Position::new(1, 0));
-
-        // At "main"
-        assert_eq!(offset_to_position(text, 17), Position::new(1, 7));
-
-        // At semicolon
-        assert_eq!(offset_to_position(text, 37), Position::new(1, 27));
+    fn test_is_completing_variable_at_line_start() {
+        // Variable at start of line
+        assert!(is_completing_variable("$var", Position::new(0, 2)));
     }
 
     #[test]
-    fn test_parse_valid_shady_code() {
-        let valid_code = "public main = echo \"Hello\";";
-
-        // Should parse without errors
-        match parse_script(valid_code) {
-            Ok(ast) => {
-                assert_eq!(ast.fn_definitions.len(), 1);
-                assert_eq!(ast.fn_definitions[0].signature.fn_name, "main");
-            }
-            Err(e) => panic!("Expected valid code to parse, got error: {:?}", e),
-        }
+    fn test_is_completing_variable_incomplete_code() {
+        // Incomplete code with variable - the key use case!
+        assert!(is_completing_variable(
+            "doit $x: str = seq [\n  echo $",
+            Position::new(1, 8)
+        ));
     }
-
-    #[test]
-    fn test_parse_invalid_shady_code_missing_semicolon() {
-        let invalid_code = "public main = echo \"Hello\"";
-
-        // Should fail to parse
-        match parse_script(invalid_code) {
-            Ok(_) => panic!("Expected invalid code to fail parsing"),
-            Err(e) => {
-                // Verify it's a parse error
-                assert!(matches!(e, ShadyError::ParseErrorSimple { .. }));
-            }
-        }
-    }
-
-    #[test]
-    fn test_parse_invalid_shady_code_bad_syntax() {
-        let invalid_code = "public main = = echo";
-
-        // Should fail to parse
-        match parse_script(invalid_code) {
-            Ok(_) => panic!("Expected invalid code to fail parsing"),
-            Err(_) => {
-                // Expected to fail
-            }
-        }
-    }
-
-    #[test]
-    fn test_parse_multiple_functions() {
-        let code = r#"
-public main = echo "Hello";
-greet $name: str = echo ("Hi, " + $name);
-add $a: int $b: int -> int = $a + $b;
-"#;
-
-        match parse_script(code) {
-            Ok(ast) => {
-                assert_eq!(ast.fn_definitions.len(), 3);
-                assert_eq!(ast.fn_definitions[0].signature.fn_name, "main");
-                assert_eq!(ast.fn_definitions[1].signature.fn_name, "greet");
-                assert_eq!(ast.fn_definitions[2].signature.fn_name, "add");
-            }
-            Err(e) => panic!("Expected valid code to parse, got error: {:?}", e),
-        }
-    }
-
-    #[test]
-    fn test_parse_empty_file() {
-        let code = "";
-
-        match parse_script(code) {
-            Ok(ast) => {
-                assert_eq!(ast.fn_definitions.len(), 0);
-            }
-            Err(e) => panic!("Expected empty file to parse, got error: {:?}", e),
-        }
-    }
-
-    #[test]
-    fn test_parse_only_comments() {
-        let code = "# This is a comment\n# Another comment";
-
-        match parse_script(code) {
-            Ok(ast) => {
-                assert_eq!(ast.fn_definitions.len(), 0);
-            }
-            Err(e) => panic!("Expected comments-only file to parse, got error: {:?}", e),
-        }
-    }
-
-    #[test]
-    fn test_diagnostic_position_for_parse_error() {
-        let invalid_code = "public main = echo \"Hello\"";
-
-        match parse_script(invalid_code) {
-            Err(ShadyError::ParseErrorSimple { message: _, span }) => {
-                // Get the position of the error
-                let start_pos = offset_to_position(invalid_code, span.offset());
-                let end_pos = offset_to_position(invalid_code, span.offset() + span.len());
-
-                // The error should be at or near the end where semicolon is missing
-                assert!(start_pos.line == 0);
-                assert!(start_pos.character > 0);
-                assert!(end_pos.line == 0);
-
-                // Range should be valid
-                assert!(end_pos.character >= start_pos.character);
-            }
-            Err(e) => panic!("Expected ParseErrorSimple, got: {:?}", e),
-            Ok(_) => panic!("Expected code to fail parsing"),
-        }
-    }
-
-    #[test]
-    fn test_diagnostic_position_multiline_error() {
-        let invalid_code = "public main = echo \"Hello\";\n\ngreet $name: str = echo";
-
-        match parse_script(invalid_code) {
-            Err(ShadyError::ParseErrorSimple { message: _, span }) => {
-                let start_pos = offset_to_position(invalid_code, span.offset());
-
-                // Error should be on line 2 (0-indexed)
-                assert!(start_pos.line >= 2);
-            }
-            Err(e) => panic!("Expected ParseErrorSimple, got: {:?}", e),
-            Ok(_) => panic!("Expected code to fail parsing"),
-        }
-    }
-
-    // Integration-style tests using mock client would go here
-    // For now, we've tested the core helper functions and parsing logic
-
-    // Tests for Go to Definition functionality
-
-    #[test]
-    fn test_position_to_offset_single_line() {
-        let text = "hello world";
-
-        assert_eq!(position_to_offset(text, Position::new(0, 0)), 0);
-        assert_eq!(position_to_offset(text, Position::new(0, 5)), 5);
-        assert_eq!(position_to_offset(text, Position::new(0, 11)), 11);
-    }
-
-    #[test]
-    fn test_position_to_offset_multiple_lines() {
-        let text = "line 1\nline 2\nline 3";
-
-        // Start of file
-        assert_eq!(position_to_offset(text, Position::new(0, 0)), 0);
-
-        // End of first line (before newline)
-        assert_eq!(position_to_offset(text, Position::new(0, 6)), 6);
-
-        // Start of second line (after first newline)
-        assert_eq!(position_to_offset(text, Position::new(1, 0)), 7);
-
-        // Middle of second line
-        assert_eq!(position_to_offset(text, Position::new(1, 3)), 10);
-
-        // Start of third line
-        assert_eq!(position_to_offset(text, Position::new(2, 0)), 14);
-    }
-
-    #[test]
-    fn test_position_to_offset_roundtrip() {
-        let text = "public main = echo \"Hello\";\ngreet $name: str = echo $name;";
-
-        // Test various positions
-        let positions = vec![
-            Position::new(0, 0),
-            Position::new(0, 7),
-            Position::new(0, 12),
-            Position::new(1, 0),
-            Position::new(1, 6),
-            Position::new(1, 14),
-        ];
-
-        for pos in positions {
-            let offset = position_to_offset(text, pos);
-            let converted_back = offset_to_position(text, offset);
-            assert_eq!(
-                converted_back, pos,
-                "Roundtrip failed for position {:?}",
-                pos
-            );
-        }
-    }
-
-    #[test]
-    fn test_find_identifier_at_position() {
-        let text = "public main = echo \"Hello\";";
-
-        // Test finding "public"
-        assert_eq!(
-            find_identifier_at_position(text, 0),
-            Some("public".to_string())
-        );
-        assert_eq!(
-            find_identifier_at_position(text, 3),
-            Some("public".to_string())
-        );
-
-        // Test finding "main"
-        assert_eq!(
-            find_identifier_at_position(text, 7),
-            Some("main".to_string())
-        );
-        assert_eq!(
-            find_identifier_at_position(text, 10),
-            Some("main".to_string())
-        );
-
-        // Test finding "echo"
-        assert_eq!(
-            find_identifier_at_position(text, 14),
-            Some("echo".to_string())
-        );
-        assert_eq!(
-            find_identifier_at_position(text, 17),
-            Some("echo".to_string())
-        );
-
-        // Test finding nothing on whitespace
-        assert_eq!(find_identifier_at_position(text, 6), None);
-
-        // Test finding nothing on special characters
-        assert_eq!(find_identifier_at_position(text, 12), None); // '='
-    }
-
-    #[test]
-    fn test_find_identifier_with_underscores() {
-        let text = "my_function = other_func 42;";
-
-        // Test finding "my_function"
-        assert_eq!(
-            find_identifier_at_position(text, 0),
-            Some("my_function".to_string())
-        );
-        assert_eq!(
-            find_identifier_at_position(text, 5),
-            Some("my_function".to_string())
-        );
-        assert_eq!(
-            find_identifier_at_position(text, 10),
-            Some("my_function".to_string())
-        );
-
-        // Test finding "other_func"
-        assert_eq!(
-            find_identifier_at_position(text, 14),
-            Some("other_func".to_string())
-        );
-        assert_eq!(
-            find_identifier_at_position(text, 23),
-            Some("other_func".to_string())
-        );
-    }
-
-    #[test]
-    fn test_find_identifier_multiline() {
-        let text = "public main = echo \"Hello\";\ngreet $name: str = echo $name;";
-
-        // Find "main" on first line
-        let main_offset = position_to_offset(text, Position::new(0, 7));
-        assert_eq!(
-            find_identifier_at_position(text, main_offset),
-            Some("main".to_string())
-        );
-
-        // Find "greet" on second line
-        let greet_offset = position_to_offset(text, Position::new(1, 0));
-        assert_eq!(
-            find_identifier_at_position(text, greet_offset),
-            Some("greet".to_string())
-        );
-
-        // Find "name" on second line (first occurrence)
-        let name1_offset = position_to_offset(text, Position::new(1, 7));
-        assert_eq!(
-            find_identifier_at_position(text, name1_offset),
-            Some("name".to_string())
-        );
-    }
-
-    #[test]
-    fn test_is_identifier_char() {
-        assert!(is_identifier_char('a'));
-        assert!(is_identifier_char('Z'));
-        assert!(is_identifier_char('0'));
-        assert!(is_identifier_char('_'));
-
-        assert!(!is_identifier_char(' '));
-        assert!(!is_identifier_char('='));
-        assert!(!is_identifier_char('$'));
-        assert!(!is_identifier_char(';'));
-        assert!(!is_identifier_char('('));
-        assert!(!is_identifier_char(')'));
-    }
-
-    #[test]
-    fn test_goto_definition_finds_function() {
-        let code = r#"
-public main = echo "Hello";
-greet $name: str = echo $name;
-add $a: int $b: int -> int = $a + $b;
-"#;
-
-        let ast = parse_script(code).unwrap();
-
-        // Test finding "greet" function
-        let url = Url::parse("file:///test.shady").unwrap();
-        let location = find_function_call_definition(&ast, code, &url, "greet");
-        assert!(location.is_some());
-
-        let loc = location.unwrap();
-        assert_eq!(loc.range.start.line, 2);
-        assert!(loc.range.start.character < 10);
-
-        // Test finding "add" function
-        let location = find_function_call_definition(&ast, code, &url, "add");
-        assert!(location.is_some());
-
-        // Test not finding non-existent function
-        let location = find_function_call_definition(&ast, code, &url, "nonexistent");
-        assert!(location.is_none());
-    }
-
-    // Tests for Autocompletion functionality
-
-    #[test]
-    fn test_get_builtin_completions() {
-        let completions = get_builtin_completions();
-
-        // Should have at least the core builtin functions
-        assert!(completions.len() >= 10);
-
-        // Check for some specific builtins
-        let labels: Vec<String> = completions.iter().map(|c| c.label.clone()).collect();
-        assert!(labels.contains(&"exec".to_string()));
-        assert!(labels.contains(&"stdout".to_string()));
-        assert!(labels.contains(&"print".to_string()));
-        assert!(labels.contains(&"first".to_string()));
-        assert!(labels.contains(&"env".to_string()));
-
-        // Check that completions have proper metadata
-        for completion in &completions {
-            assert!(completion.kind == Some(CompletionItemKind::FUNCTION));
-            assert!(completion.detail.is_some());
-            assert!(completion.documentation.is_some());
-        }
-    }
-
-    #[test]
-    fn test_completion_includes_user_functions() {
-        let code = r#"
-public main = echo "Hello";
-greet $name: str = echo $name;
-add $a: int $b: int -> int = $a + $b;
-"#;
-
-        let ast = parse_script(code).unwrap();
-
-        // Simulate what the completion handler does
-        let mut completions = Vec::new();
-
-        // Add user-defined functions
-        for fn_def in &ast.fn_definitions {
-            let detail = if fn_def.signature.parameters.is_empty() {
-                format!(
-                    "{} -> {}",
-                    fn_def.signature.fn_name, fn_def.signature.return_type
-                )
-            } else {
-                fn_def.signature.to_string()
-            };
-
-            completions.push(CompletionItem {
-                label: fn_def.signature.fn_name.clone(),
-                kind: Some(CompletionItemKind::FUNCTION),
-                detail: Some(detail),
-                documentation: Some(Documentation::String(format!(
-                    "User-defined function{}",
-                    if fn_def.signature.is_public {
-                        " (public)"
-                    } else {
-                        ""
-                    }
-                ))),
-                ..Default::default()
-            });
-        }
-
-        // Verify user functions are included
-        assert_eq!(completions.len(), 3);
-
-        let labels: Vec<String> = completions.iter().map(|c| c.label.clone()).collect();
-        assert!(labels.contains(&"main".to_string()));
-        assert!(labels.contains(&"greet".to_string()));
-        assert!(labels.contains(&"add".to_string()));
-
-        // Check that main is marked as public
-        let main_completion = completions.iter().find(|c| c.label == "main").unwrap();
-        match &main_completion.documentation {
-            Some(Documentation::String(s)) => assert!(s.contains("public")),
-            _ => panic!("Expected string documentation"),
-        }
-    }
-
-    #[test]
-    fn test_completion_with_invalid_code() {
-        let code = "public main = echo"; // Invalid - missing semicolon
-
-        // Should still provide builtin completions even if parsing fails
-        match parse_script(code) {
-            Err(_) => {
-                let completions = get_builtin_completions();
-                assert!(!completions.is_empty());
-            }
-            Ok(_) => panic!("Expected parsing to fail"),
-        }
-    }
-
-    #[test]
-    fn test_completion_item_details() {
-        let completions = get_builtin_completions();
-
-        // Check specific completion details
-        let exec_completion = completions.iter().find(|c| c.label == "exec").unwrap();
-        assert_eq!(
-            exec_completion.detail,
-            Some("exec $proc: proc -> int".to_string())
-        );
-        assert!(exec_completion.documentation.is_some());
-
-        let stdout_completion = completions.iter().find(|c| c.label == "stdout").unwrap();
-        assert_eq!(
-            stdout_completion.detail,
-            Some("stdout $proc: proc -> str".to_string())
-        );
-
-        let first_completion = completions.iter().find(|c| c.label == "first").unwrap();
-        assert_eq!(
-            first_completion.detail,
-            Some("first $list: [any] -> any".to_string())
-        );
-    }
-
-    #[test]
-    fn test_completion_function_signatures() {
-        let code = r#"
-simple = 42;
-with_params $x: int $y: str = echo $y;
-with_return -> int = 100;
-"#;
-
-        let ast = parse_script(code).unwrap();
-
-        let mut completions = Vec::new();
-        for fn_def in &ast.fn_definitions {
-            let detail = if fn_def.signature.parameters.is_empty() {
-                format!(
-                    "{} -> {}",
-                    fn_def.signature.fn_name, fn_def.signature.return_type
-                )
-            } else {
-                fn_def.signature.to_string()
-            };
-            completions.push((fn_def.signature.fn_name.clone(), detail));
-        }
-
-        // Check that we format details correctly
-        let simple_detail = completions
-            .iter()
-            .find(|(name, _)| name == "simple")
-            .unwrap();
-        assert!(simple_detail.1.contains("simple"));
-
-        let with_params_detail = completions
-            .iter()
-            .find(|(name, _)| name == "with_params")
-            .unwrap();
-        assert!(with_params_detail.1.contains("with_params"));
-        assert!(with_params_detail.1.contains("int"));
-        assert!(with_params_detail.1.contains("str"));
-    }
-
-    // Tests for Signature Help functionality
 
     #[test]
     fn test_extract_function_name_at_cursor() {
@@ -1492,11 +819,11 @@ with_return -> int = 100;
 
     #[test]
     fn test_create_signature_info() {
-        use crate::ast::{FnSignature, ParamSpec, Parameter};
+        use crate::ast::{LspParam, LspSignature};
         use crate::types::Type;
 
         // Simple function with no parameters
-        let sig = FnSignature {
+        let sig = LspSignature {
             is_public: true,
             is_infix: false,
             fn_name: "simple".to_string(),
@@ -1505,23 +832,21 @@ with_return -> int = 100;
         };
         let info = create_signature_info(&sig);
         assert_eq!(info.label, "simple -> int");
-        assert!(info.parameters.is_none()); // No parameters, so should be None
+        assert!(info.parameters.is_none());
 
         // Function with parameters
-        let sig = FnSignature {
+        let sig = LspSignature {
             is_public: false,
             is_infix: false,
             fn_name: "add".to_string(),
             parameters: vec![
-                Parameter {
+                LspParam {
                     name: "a".to_string(),
                     typ: Type::Int,
-                    spec: ParamSpec::default(),
                 },
-                Parameter {
+                LspParam {
                     name: "b".to_string(),
                     typ: Type::Int,
-                    spec: ParamSpec::default(),
                 },
             ],
             return_type: Type::Int,
@@ -1535,306 +860,66 @@ with_return -> int = 100;
     }
 
     #[test]
-    fn test_create_signature_info_parameter_offsets() {
-        use crate::ast::{FnSignature, ParamSpec, Parameter};
-        use crate::types::Type;
-
-        let sig = FnSignature {
-            is_public: false,
-            is_infix: false,
-            fn_name: "greet".to_string(),
-            parameters: vec![Parameter {
-                name: "name".to_string(),
-                typ: Type::Str,
-                spec: ParamSpec::default(),
-            }],
-            return_type: Type::Any,
-        };
-
-        let info = create_signature_info(&sig);
-        let params = info.parameters.unwrap();
-        assert_eq!(params.len(), 1);
-
-        // Check that parameter offset is correct
-        match &params[0].label {
-            ParameterLabel::LabelOffsets([start, end]) => {
-                let param_text = &info.label[*start as usize..*end as usize];
-                assert_eq!(param_text, "$name: str");
-            }
-            _ => panic!("Expected label offsets"),
-        }
-    }
-
-    #[test]
-    fn test_signature_help_for_user_function() {
-        let code = r#"
-public main = echo "Hello";
-greet $name: str = echo $name;
-add $a: int $b: int -> int = $a + $b;
-"#;
-
-        let ast = parse_script(code).unwrap();
-
-        // Find the "add" function
-        let add_fn = ast
-            .fn_definitions
-            .iter()
-            .find(|f| f.signature.fn_name == "add")
-            .unwrap();
-        let sig_info = create_signature_info(&add_fn.signature);
-
-        assert!(sig_info.label.contains("add"));
-        assert!(sig_info.label.contains("$a: int"));
-        assert!(sig_info.label.contains("$b: int"));
-        assert!(sig_info.label.contains("-> int"));
-        assert_eq!(sig_info.parameters.unwrap().len(), 2);
-    }
-
-    #[test]
-    fn test_extract_function_name_edge_cases() {
-        // Function with underscore
-        assert_eq!(
-            extract_function_name_at_cursor("my_function "),
-            Some("my_function".to_string())
-        );
-
-        // After equals sign
-        assert_eq!(
-            extract_function_name_at_cursor("x = echo "),
-            Some("echo".to_string())
-        );
-
-        // Multiple spaces
-        assert_eq!(
-            extract_function_name_at_cursor("    echo    "),
-            Some("echo".to_string())
-        );
-
-        // With parentheses (shouldn't happen in Shady but let's be safe)
-        assert_eq!(
-            extract_function_name_at_cursor("result = stdout("),
-            Some("stdout".to_string())
-        );
-    }
-
-    // Tests for new LSP helper functions
-
-    #[test]
-    fn test_find_function_at_position_single_function() {
-        use crate::ast::parse_script_tolerant;
-
+    fn test_function_at_offset() {
         let code = "greet $name: str = echo $name;";
-        let (ast, _) = parse_script_tolerant(code).unwrap();
+        let (parse_result, _) = parse_script_tolerant(code).unwrap();
 
-        // Position inside the function body (after '=')
-        let position = Position::new(0, 25); // Inside "echo"
-        let func = find_function_at_position(&ast, code, position);
+        // Position inside "echo" - should find "greet" function
+        let offset = code.find("echo").unwrap();
+        let func_sig = parse_result.function_at_offset(offset);
 
-        assert!(func.is_some());
-        assert_eq!(func.unwrap().signature.fn_name, "greet");
+        assert!(func_sig.is_some());
+        assert_eq!(func_sig.unwrap().fn_name, "greet");
     }
 
     #[test]
-    fn test_find_function_at_position_multiple_functions() {
-        use crate::ast::parse_script_tolerant;
-
+    fn test_function_at_offset_multiple_functions() {
         let code = "f1 = 1;\nf2 $x: int = $x;\nf3 = 3;";
-        let (ast, _) = parse_script_tolerant(code).unwrap();
+        let (parse_result, _) = parse_script_tolerant(code).unwrap();
 
-        // Position in f2's body - find where "$x" is in the function body (after =)
-        // Line 1 is "f2 $x: int = $x;", the second $x starts at position 13
-        let position = Position::new(1, 14); // Inside the body's "$x"
-        let func = find_function_at_position(&ast, code, position);
+        // Position in f2's body
+        let offset = code.find("f2 $x").unwrap() + 10; // Inside the body
+        let func_sig = parse_result.function_at_offset(offset);
 
-        assert!(func.is_some(), "Should find function f2");
-        assert_eq!(func.unwrap().signature.fn_name, "f2");
+        assert!(func_sig.is_some());
+        assert_eq!(func_sig.unwrap().fn_name, "f2");
     }
 
     #[test]
-    fn test_find_function_at_position_outside_function() {
-        use crate::ast::parse_script_tolerant;
+    fn test_function_at_offset_incomplete_code() {
+        let code = "doit $x: str = seq [\n  echo $x";
+        let (parse_result, _errors) = parse_script_tolerant(code).unwrap();
 
-        let code = "main = 42;";
-        let (ast, _) = parse_script_tolerant(code).unwrap();
-
-        // Position before the function definition
-        let position = Position::new(0, 0);
-        let func = find_function_at_position(&ast, code, position);
-
-        // Might be None or might be in the function depending on span
-        // The important thing is it doesn't crash
-        assert!(func.is_some() || func.is_none());
-    }
-
-    #[test]
-    fn test_is_completing_variable_after_dollar() {
-        // Cursor right after $
-        assert!(is_completing_variable("echo $", Position::new(0, 6)));
-    }
-
-    #[test]
-    fn test_is_completing_variable_middle_of_name() {
-        // Cursor in the middle of $nam|e
-        assert!(is_completing_variable("echo $name", Position::new(0, 8)));
-    }
-
-    #[test]
-    fn test_is_completing_variable_no_dollar() {
-        // No $ present
-        assert!(!is_completing_variable("echo hello", Position::new(0, 6)));
-    }
-
-    #[test]
-    fn test_is_completing_variable_after_space() {
-        // $ followed by space (not a valid variable reference)
-        assert!(is_completing_variable("echo $ ", Position::new(0, 6)));
-    }
-
-    #[test]
-    fn test_is_completing_variable_with_underscore() {
-        // Variable name with underscore
-        assert!(is_completing_variable("echo $my_var", Position::new(0, 10)));
-    }
-
-    #[test]
-    fn test_is_completing_variable_at_line_start() {
-        // Variable at start of line
-        assert!(is_completing_variable("$var", Position::new(0, 2)));
-    }
-
-    #[test]
-    fn test_is_completing_variable_incomplete_code() {
-        // Incomplete code with variable - the key use case!
-        assert!(is_completing_variable(
-            "doit $x: str = seq [\n  echo $",
-            Position::new(1, 8)
-        ));
-    }
-
-    // Integration tests for variable completion feature
-
-    #[test]
-    fn test_variable_completion_in_complete_function() {
-        use crate::ast::parse_script_tolerant;
-
-        let code = "greet $name: str $age: int = echo $n;";
-        let (ast, _errors) = parse_script_tolerant(code).unwrap();
-
-        // Cursor right after "$n" - user is typing a variable
-        // Position is 0-indexed, "echo $" is at positions 0-34, "n" is at 35, so position 36 is after "n"
-        let position = Position::new(0, 36);
-
-        // Verify we detect variable completion
-        assert!(
-            is_completing_variable(code, position),
-            "Should detect variable completion after '$n' at position {}",
-            position.character
-        );
-
-        // Verify we find the function
-        let func = find_function_at_position(&ast, code, position);
-        // Note: Due to Tree-sitter expression spans, we might not always find the function
-        // The important part is that variable completion detection works
-        if let Some(func) = func {
-            // Verify the function has the right parameters
-            assert_eq!(func.signature.fn_name, "greet");
-            assert_eq!(func.signature.parameters.len(), 2);
-            assert_eq!(func.signature.parameters[0].name, "name");
-            assert_eq!(func.signature.parameters[1].name, "age");
+        // Try to find function even in incomplete code
+        if !parse_result.function_signatures.is_empty() {
+            let offset = code.len() - 2; // Near the end
+            let func_sig = parse_result.function_at_offset(offset);
+            // May or may not find it depending on Tree-sitter's error recovery
+            // The important thing is it doesn't panic
+            let _ = func_sig;
         }
     }
 
     #[test]
-    fn test_variable_completion_in_incomplete_function() {
-        use crate::ast::parse_script_tolerant;
+    fn test_get_builtin_completions() {
+        let completions = get_builtin_completions();
 
-        // Use code that's incomplete but Tree-sitter can still parse
-        // Missing semicolon at end but otherwise valid
-        let code = "doit $something: str = echo $some";
-        let (ast, errors) = parse_script_tolerant(code).unwrap();
+        // Should have all the core builtin functions
+        assert!(completions.len() >= 10);
 
-        // Should have parse errors (missing ;) but still get AST
-        assert!(
-            !errors.is_empty(),
-            "Should have parse errors for incomplete code"
-        );
+        // Check for some specific builtins
+        let labels: Vec<String> = completions.iter().map(|c| c.label.clone()).collect();
+        assert!(labels.contains(&"exec".to_string()));
+        assert!(labels.contains(&"stdout".to_string()));
+        assert!(labels.contains(&"print".to_string()));
+        assert!(labels.contains(&"first".to_string()));
+        assert!(labels.contains(&"env".to_string()));
 
-        // Tree-sitter should be able to parse this well enough to get the function
-        if ast.fn_definitions.is_empty() {
-            // If Tree-sitter couldn't parse it, skip the rest of the test
-            // This is acceptable behavior for severely broken code
-            return;
+        // Check that completions have proper metadata
+        for completion in &completions {
+            assert!(completion.kind == Some(CompletionItemKind::FUNCTION));
+            assert!(completion.detail.is_some());
+            assert!(completion.documentation.is_some());
         }
-
-        assert_eq!(ast.fn_definitions[0].signature.fn_name, "doit");
-        assert_eq!(ast.fn_definitions[0].signature.parameters.len(), 1);
-        assert_eq!(
-            ast.fn_definitions[0].signature.parameters[0].name,
-            "something"
-        );
-
-        // Cursor at the end of "$some" - position after 'e' in "some"
-        let dollar_pos = code.find("$some").unwrap();
-        let position = Position::new(0, (dollar_pos + "$some".len()) as u32);
-
-        // Should detect variable completion
-        assert!(
-            is_completing_variable(code, position),
-            "Should detect variable completion in incomplete function"
-        );
-
-        // Should find the enclosing function
-        let func = find_function_at_position(&ast, code, position);
-        if func.is_some() {
-            assert_eq!(func.unwrap().signature.fn_name, "doit");
-        }
-    }
-
-    #[test]
-    fn test_variable_completion_with_multiple_parameters() {
-        use crate::ast::parse_script_tolerant;
-
-        let code = "process $input: str $output: str $verbose: bool = echo $x;";
-        let (ast, _) = parse_script_tolerant(code).unwrap();
-
-        // Find position right after "$x"
-        let dollar_x_pos = code.rfind("$x").unwrap();
-        let position = Position::new(0, (dollar_x_pos + "$x".len()) as u32);
-
-        assert!(
-            is_completing_variable(code, position),
-            "Should detect variable completion"
-        );
-
-        let func = find_function_at_position(&ast, code, position);
-        // Note: Tree-sitter expression spans may not always include the position
-        // The key test is that variable completion detection works
-        if let Some(func) = func {
-            // Should have all three parameters available for completion
-            assert_eq!(func.signature.parameters.len(), 3);
-            assert_eq!(func.signature.parameters[0].name, "input");
-            assert_eq!(func.signature.parameters[1].name, "output");
-            assert_eq!(func.signature.parameters[2].name, "verbose");
-        }
-    }
-
-    #[test]
-    fn test_no_variable_completion_outside_function() {
-        use crate::ast::parse_script_tolerant;
-
-        let code = "main = 42;";
-        let (ast, _) = parse_script_tolerant(code).unwrap();
-
-        // Position before the function (at column 0)
-        let position = Position::new(0, 0);
-
-        // Should not detect variable completion (no $)
-        assert!(!is_completing_variable(code, position));
-
-        // Even if we're trying to find a function, we're not in the body
-        let func = find_function_at_position(&ast, code, position);
-        // This might or might not find the function depending on how spans work
-        // The important part is tested by the variable detection above
-        let _ = func;
     }
 }

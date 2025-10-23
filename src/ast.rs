@@ -38,6 +38,109 @@ pub struct ProgramAST {
     pub fn_definitions: Vec<FnDefinition>,
 }
 
+/// LSP-specific parameter info (without default values to avoid thread-safety issues)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LspParam {
+    pub name: String,
+    pub typ: Type,
+}
+
+/// LSP-specific function signature (without default values to avoid thread-safety issues)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LspSignature {
+    pub is_public: bool,
+    pub is_infix: bool,
+    pub fn_name: String,
+    pub parameters: Vec<LspParam>,
+    pub return_type: Type,
+}
+
+impl Display for LspSignature {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut result = String::new();
+        if self.is_public {
+            result.push_str("public ");
+        }
+        if self.is_infix {
+            result.push_str("infix ");
+        }
+        result.push_str(&self.fn_name);
+        result.push(' ');
+        for (i, param) in self.parameters.iter().enumerate() {
+            result.push('$');
+            result.push_str(&param.name);
+            result.push_str(": ");
+            result.push_str(&param.typ.to_string());
+            if i < self.parameters.len() - 1 {
+                result.push_str(", ");
+            }
+        }
+        write!(f, "{}", result)
+    }
+}
+
+/// Result of parsing that includes function signatures and the tree-sitter Tree
+/// for use by LSP features. This doesn't include full AST expression trees or default
+/// values to avoid thread-safety issues with Proc values.
+pub struct ParseResult {
+    pub function_signatures: Vec<LspSignature>,
+    pub tree: tree_sitter::Tree,
+    pub source: String,
+}
+
+impl ParseResult {
+    /// Get the root node of the tree-sitter parse tree
+    pub fn root_node(&self) -> Node<'_> {
+        self.tree.root_node()
+    }
+
+    /// Get source text as bytes for tree-sitter node operations
+    pub fn source_bytes(&self) -> &[u8] {
+        self.source.as_bytes()
+    }
+
+    /// Find the tree-sitter node at a given byte offset
+    pub fn node_at_offset(&self, offset: usize) -> Option<Node<'_>> {
+        self.root_node().descendant_for_byte_range(offset, offset)
+    }
+
+    /// Find the function signature containing the given byte offset
+    pub fn function_at_offset(&self, offset: usize) -> Option<&LspSignature> {
+        let mut node = self.node_at_offset(offset)?;
+
+        // Walk up the tree until we find a function_definition node
+        while node.kind() != "fn_definition" {
+            node = node.parent()?;
+        }
+
+        // Get the function name from the node
+        let name_node = node.child_by_field_name("name")?;
+        let fn_name = name_node.utf8_text(self.source_bytes()).ok()?;
+
+        // Find the corresponding function signature
+        self.function_signatures
+            .iter()
+            .find(|f| f.fn_name == fn_name)
+    }
+}
+
+impl std::fmt::Debug for ParseResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ParseResult")
+            .field("function_signatures", &self.function_signatures)
+            .field(
+                "source",
+                &format!(
+                    "{}... ({} bytes)",
+                    &self.source[..self.source.len().min(50)],
+                    self.source.len()
+                ),
+            )
+            .field("tree", &"<tree-sitter Tree>")
+            .finish()
+    }
+}
+
 #[derive(Debug, Eq)]
 pub struct Parameter {
     pub name: String,
@@ -525,8 +628,8 @@ fn find_all_error_nodes<'a>(node: Node<'a>) -> Vec<Node<'a>> {
 }
 
 /// Parse a script with error tolerance for LSP features
-/// Returns the AST (potentially partial) and a list of parse errors
-pub fn parse_script_tolerant(text: &str) -> Result<(ProgramAST, Vec<ShadyError>)> {
+/// Returns the ParseResult (with AST and tree) and a list of parse errors
+pub fn parse_script_tolerant(text: &str) -> Result<(ParseResult, Vec<ShadyError>)> {
     let mut parser = TSParser::new();
     parser
         .set_language(parser::language())
@@ -566,7 +669,35 @@ pub fn parse_script_tolerant(text: &str) -> Result<(ProgramAST, Vec<ShadyError>)
     // Parse as much as we can from the (potentially partial) tree
     let ast = parse_program(root_node, text.as_bytes())?;
 
-    Ok((ast, errors))
+    // Convert to LSP-friendly signatures (without default values/expressions)
+    let function_signatures = ast
+        .fn_definitions
+        .into_iter()
+        .map(|fn_def| LspSignature {
+            is_public: fn_def.signature.is_public,
+            is_infix: fn_def.signature.is_infix,
+            fn_name: fn_def.signature.fn_name,
+            parameters: fn_def
+                .signature
+                .parameters
+                .into_iter()
+                .map(|p| LspParam {
+                    name: p.name,
+                    typ: p.typ,
+                })
+                .collect(),
+            return_type: fn_def.signature.return_type,
+        })
+        .collect();
+
+    Ok((
+        ParseResult {
+            function_signatures,
+            tree,
+            source: text.to_string(),
+        },
+        errors,
+    ))
 }
 
 pub fn parse_script(text: &str) -> Result<ProgramAST> {
@@ -1278,8 +1409,8 @@ public main = 42;
         let code = "main = 42;";
         let result = parse_script_tolerant(code);
         assert!(result.is_ok());
-        let (ast, errors) = result.unwrap();
-        assert_eq!(ast.fn_definitions.len(), 1);
+        let (parse_result, errors) = result.unwrap();
+        assert_eq!(parse_result.function_signatures.len(), 1);
         assert_eq!(errors.len(), 0); // No errors for valid code
     }
 
@@ -1331,10 +1462,10 @@ public main = 42;
         let code = "main = 42;\nincomplete = echo";
         let result = parse_script_tolerant(code);
         assert!(result.is_ok());
-        let (ast, errors) = result.unwrap();
+        let (parse_result, errors) = result.unwrap();
         // Should successfully parse the first complete function
-        assert!(ast.fn_definitions.len() >= 1);
-        assert_eq!(ast.fn_definitions[0].signature.fn_name, "main");
+        assert!(parse_result.function_signatures.len() >= 1);
+        assert_eq!(parse_result.function_signatures[0].fn_name, "main");
         // Should have errors for the second incomplete function
         assert!(!errors.is_empty());
     }
