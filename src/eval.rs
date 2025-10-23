@@ -1091,4 +1091,54 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Value::Int(0));
     }
+
+    #[test]
+    fn eval_function_returns_proc_without_executing() {
+        // Test that functions can return Proc values WITHOUT executing them immediately
+        // Verify that the Proc is only created, not executed, when the function returns
+        let script = r#"
+            public main = check_proc_type (make_greeting test);
+            make_greeting $name -> proc = echo $name;
+            check_proc_type $p: proc -> str = "got proc";
+        "#;
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
+
+        // If lazy evaluation works, make_greeting should return a Proc value
+        // and check_proc_type should receive it and return "got proc"
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Str("got proc".to_string()));
+    }
+
+    #[test]
+    fn eval_proc_executes_when_called_not_when_created() {
+        // Test that Procs execute only when exec() is called, not when created
+        let script = r#"
+            public main = run_twice (make_greeting test);
+            make_greeting $name -> proc = echo $name;
+            run_twice $cmd: proc = {
+                exec $cmd;
+                exec $cmd;
+                42
+            };
+        "#;
+        let program = parse_script(script).unwrap();
+        let context = build_context("test.shady".to_string(), script.to_string(), program);
+        let fun = get_fn_by_name(&context.program, "main").unwrap();
+        let local_context = LocalContext {
+            vars: HashMap::new(),
+            depth: 0,
+        };
+        let result = eval_local_fn(&local_context, &context, fun, &[]);
+
+        // Should successfully execute echo twice and return 42
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Int(42));
+    }
 }

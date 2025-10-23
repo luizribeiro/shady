@@ -63,12 +63,14 @@ module.exports = grammar({
       $.type_int,
       $.type_str,
       $.type_bool,
+      $.type_proc,
       $.type_list,
     ),
 
     type_int: $ => 'int',
     type_str: $ => 'str',
     type_bool: $ => 'bool',
+    type_proc: $ => 'proc',
     type_list: $ => seq('[', field('element_type', $.typ), ']'),
 
     // Parameters

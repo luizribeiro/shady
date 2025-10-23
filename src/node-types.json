@@ -584,6 +584,10 @@
           "named": true
         },
         {
+          "type": "type_proc",
+          "named": true
+        },
+        {
           "type": "type_str",
           "named": true
         }
@@ -802,6 +806,10 @@
   },
   {
     "type": "type_int",
+    "named": true
+  },
+  {
+    "type": "type_proc",
     "named": true
   },
   {

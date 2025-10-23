@@ -114,6 +114,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "type_proc"
+        },
+        {
+          "type": "SYMBOL",
           "name": "type_list"
         }
       ]
@@ -129,6 +133,10 @@
     "type_bool": {
       "type": "STRING",
       "value": "bool"
+    },
+    "type_proc": {
+      "type": "STRING",
+      "value": "proc"
     },
     "type_list": {
       "type": "SEQ",

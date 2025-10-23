@@ -311,6 +311,7 @@ fn parse_type(node: Node, _source: &[u8]) -> Type {
         "type_int" => Type::Int,
         "type_str" => Type::Str,
         "type_bool" => Type::Bool,
+        "type_proc" => Type::Proc,
         "type_list" => {
             let element_type = child_by_field(&node, "element_type")
                 .expect("type_list must have element_type field");
