@@ -504,6 +504,73 @@ fn find_error_node<'a>(node: Node<'a>) -> Option<Node<'a>> {
     None
 }
 
+/// Recursively find all ERROR or MISSING nodes in the parse tree
+fn find_all_error_nodes<'a>(node: Node<'a>) -> Vec<Node<'a>> {
+    let mut errors = Vec::new();
+
+    if node.kind() == "ERROR" || node.is_missing() {
+        errors.push(node);
+    }
+
+    // Recursively check children using cursor
+    let mut cursor = node.walk();
+    if cursor.goto_first_child() {
+        loop {
+            errors.extend(find_all_error_nodes(cursor.node()));
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+
+    errors
+}
+
+/// Parse a script with error tolerance for LSP features
+/// Returns the AST (potentially partial) and a list of parse errors
+pub fn parse_script_tolerant(text: &str) -> Result<(ProgramAST, Vec<ShadyError>)> {
+    let mut parser = TSParser::new();
+    parser
+        .set_language(parser::language())
+        .map_err(|e| ShadyError::ParseErrorSimple {
+            message: format!("Failed to set tree-sitter language: {}", e),
+            span: SourceSpan::from(0..0),
+        })?;
+
+    let tree = parser
+        .parse(text, None)
+        .ok_or_else(|| ShadyError::ParseErrorSimple {
+            message: "Failed to parse script".to_string(),
+            span: SourceSpan::from(0..0),
+        })?;
+
+    let root_node = tree.root_node();
+    let mut errors = Vec::new();
+
+    // Collect all parse errors but don't fail
+    if root_node.has_error() {
+        let error_nodes = find_all_error_nodes(root_node);
+        for error_node in error_nodes {
+            errors.push(ShadyError::ParseErrorSimple {
+                message: "Syntax error in script".to_string(),
+                span: SourceSpan::from(error_node.start_byte()..error_node.end_byte()),
+            });
+        }
+    }
+
+    if root_node.kind() != "program" {
+        return Err(ShadyError::ParseErrorSimple {
+            message: format!("expected program node, got {}", root_node.kind()),
+            span: SourceSpan::from(0..0),
+        });
+    }
+
+    // Parse as much as we can from the (potentially partial) tree
+    let ast = parse_program(root_node, text.as_bytes())?;
+
+    Ok((ast, errors))
+}
+
 pub fn parse_script(text: &str) -> Result<ProgramAST> {
     let mut parser = TSParser::new();
     parser
@@ -1205,5 +1272,72 @@ public main = 42;
         let program = result.unwrap();
         assert_eq!(program.fn_definitions.len(), 1);
         assert_eq!(program.fn_definitions[0].signature.fn_name, "main");
+    }
+
+    // Tests for tolerant parsing
+    #[test]
+    fn test_parse_tolerant_with_valid_code() {
+        let code = "main = 42;";
+        let result = parse_script_tolerant(code);
+        assert!(result.is_ok());
+        let (ast, errors) = result.unwrap();
+        assert_eq!(ast.fn_definitions.len(), 1);
+        assert_eq!(errors.len(), 0); // No errors for valid code
+    }
+
+    #[test]
+    fn test_parse_tolerant_missing_semicolon() {
+        let code = "main = 42";
+        let result = parse_script_tolerant(code);
+        assert!(result.is_ok());
+        let (_ast, errors) = result.unwrap();
+        assert!(!errors.is_empty()); // Should have errors
+    }
+
+    #[test]
+    fn test_parse_tolerant_incomplete_list() {
+        let code = "doit $x: str = seq [\n  echo $x";
+        let result = parse_script_tolerant(code);
+        assert!(result.is_ok());
+        let (_ast, errors) = result.unwrap();
+        // Should have errors for incomplete code (missing ] and ;)
+        assert!(!errors.is_empty());
+        // Note: with severely incomplete code, Tree-sitter may not be able to
+        // construct valid function definitions, which is expected behavior
+    }
+
+    #[test]
+    fn test_parse_tolerant_multiple_errors() {
+        let code = "f1 = 1\nf2 = 2\nf3 = 3";
+        let result = parse_script_tolerant(code);
+        assert!(result.is_ok());
+        let (_ast, errors) = result.unwrap();
+        // Should collect errors (missing semicolons)
+        assert!(errors.len() >= 1);
+        // Note: Tree-sitter may or may not recover enough to create AST nodes
+    }
+
+    #[test]
+    fn test_parse_tolerant_nested_incomplete() {
+        let code = "doit $x: str = if ($x) seq [\n  echo";
+        let result = parse_script_tolerant(code);
+        assert!(result.is_ok());
+        let (_ast, errors) = result.unwrap();
+        // Should have errors for incomplete code
+        assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_parse_tolerant_partial_recovery() {
+        // This test uses code that Tree-sitter CAN recover from
+        let code = "main = 42;\nincomplete = echo";
+        let result = parse_script_tolerant(code);
+        assert!(result.is_ok());
+        let (ast, errors) = result.unwrap();
+        // Should successfully parse the first complete function
+        assert!(ast.fn_definitions.len() >= 1);
+        assert_eq!(ast.fn_definitions[0].signature.fn_name, "main");
+        // Should have errors for the second incomplete function
+        assert!(!errors.is_empty());
     }
 }
