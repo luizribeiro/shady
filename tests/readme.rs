@@ -1,7 +1,8 @@
 // Integration test to validate all Shady code examples in README.md
 
-use shady::ast::parse_script;
+use shady::ast::{parse_script, parse_script_tolerant};
 use shady::eval::build_context;
+use shady::formatter::format_script;
 use shady::typecheck::TypeChecker;
 use std::fs;
 
@@ -176,4 +177,47 @@ fn test_readme_code_block_count() {
     );
 
     println!("README.md contains {} Shady code blocks", blocks.len());
+}
+
+#[test]
+fn test_readme_code_blocks_are_formatted() {
+    let blocks = extract_shady_code_blocks();
+    let mut unformatted_blocks = Vec::new();
+
+    for (line_num, code) in &blocks {
+        if should_skip_block(code) {
+            continue;
+        }
+
+        // Parse the code
+        let (parse_result, _) = match parse_script_tolerant(code) {
+            Ok(result) => result,
+            Err(_) => continue, // Skip if it doesn't parse (covered by other test)
+        };
+
+        // Format the code
+        let formatted = format_script(code, &parse_result);
+
+        // Check if formatting changed anything
+        if &formatted != code && !code.ends_with('\n') && &formatted == &format!("{}\n", code) {
+            // Allow missing trailing newline - formatter always adds one
+            continue;
+        }
+
+        if &formatted != code {
+            unformatted_blocks.push((*line_num, code.clone(), formatted));
+        }
+    }
+
+    if !unformatted_blocks.is_empty() {
+        let mut error_msg = String::from("\n\nThe following README code blocks are not properly formatted:\n");
+        for (line_num, original, formatted) in unformatted_blocks {
+            error_msg.push_str(&format!(
+                "\n--- Block at line {} ---\nOriginal:\n{}\nFormatted:\n{}\n",
+                line_num, original, formatted
+            ));
+        }
+        error_msg.push_str("\nRun the formatter on these blocks to fix them.\n");
+        panic!("{}", error_msg);
+    }
 }

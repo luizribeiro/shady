@@ -60,16 +60,27 @@ impl<'a> Formatter<'a> {
     fn format(&mut self) -> String {
         let root = self.parse_result.root_node();
         let mut cursor = root.walk();
+        let mut prev_kind: Option<&str> = None;
 
         for child in root.named_children(&mut cursor) {
             if child.kind() == "comment" {
+                // Add blank line before comment if previous was a function
+                if let Some("fn_definition") = prev_kind {
+                    self.output.push('\n');
+                }
                 // Format comment
                 self.format_comment(&child);
                 self.output.push('\n');
+                prev_kind = Some("comment");
             } else if child.kind() == "fn_definition" {
+                // Add blank line before function if previous was a function
+                if let Some("fn_definition") = prev_kind {
+                    self.output.push('\n');
+                }
                 // Format function definition
                 self.format_function_definition(&child);
                 self.output.push('\n');
+                prev_kind = Some("fn_definition");
             }
         }
 
@@ -286,19 +297,20 @@ impl<'a> Formatter<'a> {
         self.output.push_str("if (");
 
         if let Some(condition) = node.child_by_field_name("condition") {
-            self.format_expression(&condition, true);
+            // Don't add extra parens - we're already inside if (...)
+            self.format_expression(&condition, false);
         }
 
         self.output.push_str(") ");
 
         if let Some(when_true) = node.child_by_field_name("when_true") {
-            self.format_expression(&when_true, true);
+            self.format_expression(&when_true, false);
         }
 
         self.output.push_str(" else ");
 
         if let Some(when_false) = node.child_by_field_name("when_false") {
-            self.format_expression(&when_false, true);
+            self.format_expression(&when_false, false);
         }
 
         if is_nested {
@@ -366,10 +378,9 @@ impl<'a> Formatter<'a> {
                 match child.kind() {
                     "(" => {
                         has_parens = true;
-                        self.output.push('(');
                     }
                     ")" => {
-                        self.output.push(')');
+                        // Already noted by has_parens
                     }
                     _ if child.is_named() => {
                         inner_expr = Some(child);
@@ -385,7 +396,10 @@ impl<'a> Formatter<'a> {
                 }
             } else if let Some(expr) = inner_expr {
                 // Had parens, format the expression inside them
-                self.format_expression(&expr, true);
+                // Don't pass is_nested=true since we're already adding explicit parens
+                self.output.push('(');
+                self.format_expression(&expr, false);
+                self.output.push(')');
             }
         } else {
             // Not wrapped in fn_arg, format directly
@@ -422,7 +436,9 @@ impl<'a> Formatter<'a> {
         }
 
         if let Some(left) = node.child_by_field_name("left") {
-            self.format_expression(&left, true);
+            // Only add parens if the child is also a binary expr
+            let needs_parens = left.kind() == "binary_expr";
+            self.format_expression(&left, needs_parens);
         }
 
         if let Some(operator) = node.child_by_field_name("operator") {
@@ -434,7 +450,9 @@ impl<'a> Formatter<'a> {
         }
 
         if let Some(right) = node.child_by_field_name("right") {
-            self.format_expression(&right, true);
+            // Only add parens if the child is also a binary expr
+            let needs_parens = right.kind() == "binary_expr";
+            self.format_expression(&right, needs_parens);
         }
 
         if is_nested {
@@ -472,7 +490,8 @@ impl<'a> Formatter<'a> {
         }
 
         if let Some(body) = node.child_by_field_name("body") {
-            self.format_expression(&body, true);
+            // Don't add extra parens around lambda body
+            self.format_expression(&body, false);
         }
     }
 }
