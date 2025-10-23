@@ -267,6 +267,11 @@ impl LanguageServer for Backend {
 
         let offset = lsp_position_to_offset(&doc.parse_result.source, position);
 
+        // Check if we're completing a type annotation (after ':' in parameter)
+        if is_completing_type(&doc.parse_result.source, position) {
+            return Ok(Some(CompletionResponse::Array(get_type_completions())));
+        }
+
         // Check if we're completing a variable (after '$')
         if is_completing_variable(&doc.parse_result.source, position) {
             // Find the function containing the cursor
@@ -584,6 +589,107 @@ fn is_completing_variable(text: &str, position: Position) -> bool {
     }
 }
 
+/// Check if the user is completing a type annotation (after ':' in parameter)
+fn is_completing_type(text: &str, position: Position) -> bool {
+    let line = match text.lines().nth(position.line as usize) {
+        Some(l) => l,
+        None => return false,
+    };
+
+    let char_pos = position.character as usize;
+    if char_pos > line.len() || char_pos == 0 {
+        return false;
+    }
+
+    let line_up_to_cursor = &line[..char_pos].trim_end();
+
+    // Pattern: $identifier: <cursor> or $identifier: partial<cursor>
+    // Look for the pattern where we have a parameter name followed by ':'
+    if let Some(colon_pos) = line_up_to_cursor.rfind(':') {
+        let before_colon = &line_up_to_cursor[..colon_pos].trim_end();
+        let after_colon = &line_up_to_cursor[colon_pos + 1..].trim_start();
+
+        // Check if before colon ends with a valid parameter name (starts with $)
+        let words: Vec<&str> = before_colon.split_whitespace().collect();
+        if let Some(last_word) = words.last() {
+            if last_word.starts_with('$') {
+                // After colon should be empty or a partial type name
+                return after_colon
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '[' || c == ']');
+            }
+        }
+    }
+
+    false
+}
+
+/// Get type completion items
+fn get_type_completions() -> Vec<CompletionItem> {
+    vec![
+        CompletionItem {
+            label: "int".to_string(),
+            kind: Some(CompletionItemKind::TYPE_PARAMETER),
+            detail: Some("Integer type".to_string()),
+            documentation: Some(Documentation::String(
+                "Signed integer type".to_string(),
+            )),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "str".to_string(),
+            kind: Some(CompletionItemKind::TYPE_PARAMETER),
+            detail: Some("String type".to_string()),
+            documentation: Some(Documentation::String("String type".to_string())),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "bool".to_string(),
+            kind: Some(CompletionItemKind::TYPE_PARAMETER),
+            detail: Some("Boolean type".to_string()),
+            documentation: Some(Documentation::String("Boolean type (true/false)".to_string())),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "proc".to_string(),
+            kind: Some(CompletionItemKind::TYPE_PARAMETER),
+            detail: Some("Process type".to_string()),
+            documentation: Some(Documentation::String(
+                "Process handle type".to_string(),
+            )),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "[int]".to_string(),
+            kind: Some(CompletionItemKind::TYPE_PARAMETER),
+            detail: Some("List of integers".to_string()),
+            documentation: Some(Documentation::String("List of integers".to_string())),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "[str]".to_string(),
+            kind: Some(CompletionItemKind::TYPE_PARAMETER),
+            detail: Some("List of strings".to_string()),
+            documentation: Some(Documentation::String("List of strings".to_string())),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "[bool]".to_string(),
+            kind: Some(CompletionItemKind::TYPE_PARAMETER),
+            detail: Some("List of booleans".to_string()),
+            documentation: Some(Documentation::String("List of booleans".to_string())),
+            ..Default::default()
+        },
+        CompletionItem {
+            label: "[proc]".to_string(),
+            kind: Some(CompletionItemKind::TYPE_PARAMETER),
+            detail: Some("List of processes".to_string()),
+            documentation: Some(Documentation::String("List of processes".to_string())),
+            ..Default::default()
+        },
+    ]
+}
+
 /// Get completion items for builtin functions
 fn get_builtin_completions() -> Vec<CompletionItem> {
     vec![
@@ -755,6 +861,73 @@ mod tests {
             "doit $x: str = seq [\n  echo $",
             Position::new(1, 8)
         ));
+    }
+
+    #[test]
+    fn test_is_completing_type_after_colon() {
+        // Cursor right after colon and space
+        assert!(is_completing_type(
+            "public main $something: ",
+            Position::new(0, 24)
+        ));
+    }
+
+    #[test]
+    fn test_is_completing_type_partial() {
+        // Partial type name
+        assert!(is_completing_type(
+            "public main $something: st",
+            Position::new(0, 26)
+        ));
+    }
+
+    #[test]
+    fn test_is_completing_type_with_list() {
+        // Partial list type
+        assert!(is_completing_type(
+            "public main $items: [int",
+            Position::new(0, 24)
+        ));
+    }
+
+    #[test]
+    fn test_not_completing_type_before_colon() {
+        // Cursor before the colon
+        assert!(!is_completing_type(
+            "public main $something",
+            Position::new(0, 22)
+        ));
+    }
+
+    #[test]
+    fn test_not_completing_type_in_function_body() {
+        // In function body, not a parameter
+        assert!(!is_completing_type(
+            "main $x: int = echo ",
+            Position::new(0, 20)
+        ));
+    }
+
+    #[test]
+    fn test_get_type_completions() {
+        let completions = get_type_completions();
+
+        // Should have basic types
+        assert!(completions.len() >= 8);
+
+        let labels: Vec<String> = completions.iter().map(|c| c.label.clone()).collect();
+        assert!(labels.contains(&"int".to_string()));
+        assert!(labels.contains(&"str".to_string()));
+        assert!(labels.contains(&"bool".to_string()));
+        assert!(labels.contains(&"proc".to_string()));
+        assert!(labels.contains(&"[int]".to_string()));
+        assert!(labels.contains(&"[str]".to_string()));
+
+        // Check metadata
+        for completion in &completions {
+            assert!(completion.kind == Some(CompletionItemKind::TYPE_PARAMETER));
+            assert!(completion.detail.is_some());
+        }
     }
 
     #[test]
