@@ -141,7 +141,7 @@ fn test_readme_has_lambda_examples() {
 
     // Ensure README contains lambda examples
     let has_lambda = blocks.iter().any(|(_, code)| {
-        code.contains("λ") || code.contains("lambda")
+        code.contains("lambda")
     });
 
     assert!(

@@ -217,7 +217,7 @@ impl Display for Value {
             }
             Value::Proc { .. } => "<proc object>".to_string(),
             Value::Lambda(lambda) => format!(
-                "<λ function: fn({}) -> {}>",
+                "<lambda function: fn({}) -> {}>",
                 lambda
                     .param_types
                     .iter()

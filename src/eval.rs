@@ -1276,7 +1276,7 @@ mod tests {
         assert_eq!(
             eval_script(
                 r#"
-                public main = first (map (λ $x -> $x + 1) [5]);
+                public main = first (map (lambda $x -> $x + 1) [5]);
             "#
             ),
             Value::Int(6),
@@ -1285,7 +1285,7 @@ mod tests {
 
     #[test]
     fn eval_lambda_with_keyword() {
-        // Test using 'lambda' keyword instead of λ
+        // Test using 'lambda' keyword instead of lambda
         assert_eq!(
             eval_script(
                 r#"
@@ -1302,7 +1302,7 @@ mod tests {
         assert_eq!(
             eval_script(
                 r#"
-                public main = first (map (λ $x: int -> int = $x + 1) [41]);
+                public main = first (map (lambda $x: int -> int = $x + 1) [41]);
             "#
             ),
             Value::Int(42),
@@ -1316,7 +1316,7 @@ mod tests {
             eval_script(
                 r#"
                 public main = make_adder_list 10 [32];
-                make_adder_list $y: int $list: [int] = map (λ $a -> $a + $y) $list;
+                make_adder_list $y: int $list: [int] = map (lambda $a -> $a + $y) $list;
             "#
             ),
             Value::List {
@@ -1332,7 +1332,7 @@ mod tests {
         assert_eq!(
             eval_script(
                 r#"
-                public main = reduce (λ $x $y -> $x + $y) 10 [32];
+                public main = reduce (lambda $x $y -> $x + $y) 10 [32];
             "#
             ),
             Value::Int(42),
@@ -1345,7 +1345,7 @@ mod tests {
         assert_eq!(
             eval_script(
                 r#"
-                public main = map (λ $x -> $x * 2) [1; 2; 3];
+                public main = map (lambda $x -> $x * 2) [1; 2; 3];
             "#
             ),
             Value::List {
@@ -1361,7 +1361,7 @@ mod tests {
         assert_eq!(
             eval_script(
                 r#"
-                public main = identity_list (map (λ $x: int -> int = $x * 2) (get_empty_list 0));
+                public main = identity_list (map (lambda $x: int -> int = $x * 2) (get_empty_list 0));
                 identity_list $xs: [int] = $xs;
                 get_empty_list $dummy: int -> [int] = [];
             "#
@@ -1380,7 +1380,7 @@ mod tests {
             eval_script(
                 r#"
                 public main = map_with_offset 10 [1; 2; 3];
-                map_with_offset $offset: int $list: [int] = map (λ $x -> $x + $offset) $list;
+                map_with_offset $offset: int $list: [int] = map (lambda $x -> $x + $offset) $list;
             "#
             ),
             Value::List {
@@ -1396,7 +1396,7 @@ mod tests {
         assert_eq!(
             eval_script(
                 r#"
-                public main = filter (λ $x -> $x > 2) [1; 2; 3; 4; 5];
+                public main = filter (lambda $x -> $x > 2) [1; 2; 3; 4; 5];
             "#
             ),
             Value::List {
@@ -1412,7 +1412,7 @@ mod tests {
         assert_eq!(
             eval_script(
                 r#"
-                public main = filter (λ $x -> $x > 10) [1; 2; 3];
+                public main = filter (lambda $x -> $x > 10) [1; 2; 3];
             "#
             ),
             Value::List {
@@ -1429,7 +1429,7 @@ mod tests {
             eval_script(
                 r#"
                 public main = filter_above 3 [1; 2; 3; 4; 5];
-                filter_above $threshold: int $list: [int] = filter (λ $x -> $x > $threshold) $list;
+                filter_above $threshold: int $list: [int] = filter (lambda $x -> $x > $threshold) $list;
             "#
             ),
             Value::List {
@@ -1445,7 +1445,7 @@ mod tests {
         assert_eq!(
             eval_script(
                 r#"
-                public main = reduce (λ $acc $x -> $acc + $x) 0 [1; 2; 3; 4];
+                public main = reduce (lambda $acc $x -> $acc + $x) 0 [1; 2; 3; 4];
             "#
             ),
             Value::Int(10),
@@ -1458,7 +1458,7 @@ mod tests {
         assert_eq!(
             eval_script(
                 r#"
-                public main = reduce (λ $acc $x -> $acc * $x) 1 [2; 3; 4];
+                public main = reduce (lambda $acc $x -> $acc * $x) 1 [2; 3; 4];
             "#
             ),
             Value::Int(24),
@@ -1471,7 +1471,7 @@ mod tests {
         assert_eq!(
             eval_script(
                 r#"
-                public main = reduce (λ $acc $x -> $acc + $x) 42 (empty_list []);
+                public main = reduce (lambda $acc $x -> $acc + $x) 42 (empty_list []);
                 empty_list $xs: [int] = $xs;
             "#
             ),
@@ -1486,7 +1486,7 @@ mod tests {
             eval_script(
                 r#"
                 public main = reduce_with_mult 2 [1; 2; 3];
-                reduce_with_mult $multiplier: int $list: [int] = reduce (λ $acc $x -> $acc + ($x * $multiplier)) 0 $list;
+                reduce_with_mult $multiplier: int $list: [int] = reduce (lambda $acc $x -> $acc + ($x * $multiplier)) 0 $list;
             "#
             ),
             Value::Int(12), // (0 + 1*2) + (2*2) + (3*2) = 2 + 4 + 6 = 12
@@ -1500,7 +1500,7 @@ mod tests {
         assert_eq!(
             eval_script(
                 r#"
-                public main = first (map (λ $a: int -> first (map (λ $b: int -> $a + $b) [37])) [5]);
+                public main = first (map (lambda $a: int -> first (map (lambda $b: int -> $a + $b) [37])) [5]);
             "#
             ),
             Value::Int(42),
@@ -1514,7 +1514,7 @@ mod tests {
             eval_script(
                 r#"
                 public main = process_list [1; 2; 3; 4; 5];
-                process_list $nums: [int] = reduce (λ $acc: int $x: int -> $acc + $x) 0 (filter (λ $x: int -> $x > 4) (map (λ $x: int -> $x * 2) $nums));
+                process_list $nums: [int] = reduce (lambda $acc: int $x: int -> $acc + $x) 0 (filter (lambda $x: int -> $x > 4) (map (lambda $x: int -> $x * 2) $nums));
             "#
             ),
             Value::Int(24), // [1,2,3,4,5] -> map(*2) -> [2,4,6,8,10] -> filter(>4) -> [6,8,10] -> reduce(+) -> 24
@@ -1527,7 +1527,7 @@ mod tests {
         assert_eq!(
             eval_script(
                 r#"
-                public main = first (map (λ $x: int -> $x + 1) (map (λ $x: int -> $x + 1) [40]));
+                public main = first (map (lambda $x: int -> $x + 1) (map (lambda $x: int -> $x + 1) [40]));
             "#
             ),
             Value::Int(42),
@@ -1538,7 +1538,7 @@ mod tests {
     fn eval_map_str() {
         // Test map on string list (type checking)
         let script = r#"
-            public main = map (λ $s -> $s + "!") ["hello"; "world"];
+            public main = map (lambda $s -> $s + "!") ["hello"; "world"];
         "#;
         assert_eq!(
             eval_script(script),
@@ -1557,7 +1557,7 @@ mod tests {
     fn eval_map_wrong_param_count() {
         // Test that map rejects lambda with wrong number of parameters
         let script = r#"
-            public main = map (λ $x $y -> $x + $y) [1; 2; 3];
+            public main = map (lambda $x $y -> $x + $y) [1; 2; 3];
         "#;
         let program = parse_script(script).unwrap();
         let context = build_context("test.shady".to_string(), script.to_string(), program);
@@ -1581,7 +1581,7 @@ mod tests {
     fn eval_filter_wrong_param_count() {
         // Test that filter rejects lambda with wrong number of parameters
         let script = r#"
-            public main = filter (λ $x $y -> $x > $y) [1; 2; 3];
+            public main = filter (lambda $x $y -> $x > $y) [1; 2; 3];
         "#;
         let program = parse_script(script).unwrap();
         let context = build_context("test.shady".to_string(), script.to_string(), program);
@@ -1605,7 +1605,7 @@ mod tests {
     fn eval_reduce_wrong_param_count() {
         // Test that reduce rejects lambda with wrong number of parameters
         let script = r#"
-            public main = reduce (λ $x -> $x + 1) 0 [1; 2; 3];
+            public main = reduce (lambda $x -> $x + 1) 0 [1; 2; 3];
         "#;
         let program = parse_script(script).unwrap();
         let context = build_context("test.shady".to_string(), script.to_string(), program);
@@ -1630,7 +1630,7 @@ mod tests {
         // Test that calling lambda with wrong number of args fails
         // reduce expects a 2-param lambda, we give it a 1-param lambda
         let script = r#"
-            public main = reduce (λ $x -> $x + 1) 0 [1; 2; 3];
+            public main = reduce (lambda $x -> $x + 1) 0 [1; 2; 3];
         "#;
         let program = parse_script(script).unwrap();
         let context = build_context("test.shady".to_string(), script.to_string(), program);

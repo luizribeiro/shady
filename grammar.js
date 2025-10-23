@@ -288,9 +288,9 @@ module.exports = grammar({
 
     custom_infix_op: $ => seq('`', $.token, '`'),
 
-    // Lambda expressions: λ $x $y -> body or lambda $x: int $y: str -> body
+    // Lambda expressions: lambda $x $y -> body or lambda $x: int $y: str -> body
     lambda_expr: $ => seq(
-      choice('λ', 'lambda'),
+      'lambda',
       repeat1(field('parameter', $.parameter)),
       '->',
       optional(seq(field('return_type', $.typ), '=')),

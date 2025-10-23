@@ -1272,17 +1272,8 @@
       "type": "SEQ",
       "members": [
         {
-          "type": "CHOICE",
-          "members": [
-            {
-              "type": "STRING",
-              "value": "λ"
-            },
-            {
-              "type": "STRING",
-              "value": "lambda"
-            }
-          ]
+          "type": "STRING",
+          "value": "lambda"
         },
         {
           "type": "REPEAT1",

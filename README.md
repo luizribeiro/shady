@@ -81,7 +81,7 @@ public safe-divide $a: int $b: int -> int =
 
 # Lambda expressions enable functional composition
 public double-twice $x: int -> int =
-  first (map (λ $y -> $y * 2) (map (λ $z -> $z * 2) [$x]));
+  first (map (lambda $y -> $y * 2) (map (lambda $z -> $z * 2) [$x]));
 ```
 
 ### String Interpolation
@@ -264,36 +264,36 @@ public count-project-lines =
 Shady supports first-class lambda expressions with closures, enabling functional programming patterns:
 
 ```shady
-# Lambda syntax: λ or lambda keyword
+# Lambda syntax: using the lambda keyword
 public double-all $nums: [int] =
-  map (λ $x -> $x * 2) $nums;
+  map (lambda $x -> $x * 2) $nums;
 
 # Lambdas can capture variables from their environment (closures)
 public add-to-all $n: int $nums: [int] =
-  map (λ $x -> $x + $n) $nums;
+  map (lambda $x -> $x + $n) $nums;
 
 # Filter with predicates
 public get-positives $nums: [int] =
-  filter (λ $x -> $x > 0) $nums;
+  filter (lambda $x -> $x > 0) $nums;
 
 # Reduce for aggregation
 public sum-list $nums: [int] =
-  reduce (λ $acc $x -> $acc + $x) 0 $nums;
+  reduce (lambda $acc $x -> $acc + $x) 0 $nums;
 
 # Combine higher-order functions
 public process-numbers $nums: [int] =
   reduce
-    (λ $acc $x -> $acc + $x)
+    (lambda $acc $x -> $acc + $x)
     0
-    (filter (λ $x -> $x > 0) (map (λ $x -> $x * 2) $nums));
+    (filter (lambda $x -> $x > 0) (map (lambda $x -> $x * 2) $nums));
 
 # Type annotations are optional (inferred from context)
 public explicit-types $nums: [int] =
-  map (λ $x: int -> int = $x + 1) $nums;
+  map (lambda $x: int -> int = $x + 1) $nums;
 
 # Multi-parameter lambdas (simplified example)
 public zip-sum $a: [int] $b: [int] =
-  reduce (λ $acc $pair -> $acc + (first $pair) + (first (rest $pair))) 0 [];
+  reduce (lambda $acc $pair -> $acc + (first $pair) + (first (rest $pair))) 0 [];
 ```
 
 ### List Operations
@@ -303,10 +303,10 @@ public zip-sum $a: [int] $b: [int] =
 public sum-numbers = print (to_string (add_all [1; 2; 3; 4; 5]));
 
 # Transform lists with map
-public square-all $nums: [int] = map (λ $x -> $x * $x) $nums;
+public square-all $nums: [int] = map (lambda $x -> $x * $x) $nums;
 
 # Filter lists with predicates
-public get-evens $nums: [int] = filter (λ $x -> ($x % 2) == 0) $nums;
+public get-evens $nums: [int] = filter (lambda $x -> ($x % 2) == 0) $nums;
 
 # Lists from CLI are comma-separated
 public batch-process $files: [str] = seq [
@@ -328,11 +328,11 @@ public modified-files =
 # Functional data processing
 public count-large-files $threshold: int =
   reduce
-    (λ $count $_ -> $count + 1)
+    (lambda $count $_ -> $count + 1)
     0
     (filter
-      (λ $size -> $size > $threshold)
-      (map (λ $line -> first (lines $line)) (lines (du -b *)))
+      (lambda $size -> $size > $threshold)
+      (map (lambda $line -> first (lines $line)) (lines (du -b *)))
     );
 ```
 
@@ -455,22 +455,22 @@ public check-error-rate $logfile: str $threshold: int = seq [
 ```shady
 # Process lists of files with functional composition
 public analyze-files $files: [str] =
-  map (λ $file -> $file + ": processed") $files;
+  map (lambda $file -> $file + ": processed") $files;
 
 # Transform and filter with map
 public process-numbers $nums: [int] =
   filter
-    (λ $x -> $x > 10)
-    (map (λ $y -> $y * 2) $nums);
+    (lambda $x -> $x > 10)
+    (map (lambda $y -> $y * 2) $nums);
 
 # Parallel-style processing with map
 public format-list $items: [str] =
-  map (λ $item -> "Item: " + $item) $items;
+  map (lambda $item -> "Item: " + $item) $items;
 
 # Compute statistics with reduce
 public sum-and-double $nums: [int] -> int =
   reduce
-    (λ $acc $x -> $acc + ($x * 2))
+    (lambda $acc $x -> $acc + ($x * 2))
     0
     $nums;
 ```
