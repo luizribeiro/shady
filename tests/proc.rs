@@ -103,9 +103,11 @@ fn test_stdout_from_redirection() {
 
 #[test]
 fn test_stdout_redirection_chaining() {
+    // Test stdout redirection chaining through multiple commands
+    // Note: Using 'tr' instead of awk to avoid curly braces (which would require interpolation syntax)
     call_main(
         r#"
-        this_host = stdout (echo "sodium") > (sed "s/o/a/g") > (awk "{printf $0}");
+        this_host = stdout (echo "sodium") > (sed "s/o/a/g") > (tr -d "\n");
         public main = exec (echo ("pre" + (this_host) + "post"));
         "#,
         &[],

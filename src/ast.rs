@@ -251,6 +251,12 @@ pub struct FnDefinition {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub enum StringSegment {
+    Text(String),
+    Interpolated(Box<Expr>),
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Expr {
     Value(Value, Span),
     Variable(String, Span),
@@ -274,6 +280,10 @@ pub enum Expr {
         expressions: Vec<Expr>,
         span: Span,
     },
+    InterpolatedString {
+        segments: Vec<StringSegment>,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -286,6 +296,7 @@ impl Expr {
             Expr::If { span, .. } => span,
             Expr::List { span, .. } => span,
             Expr::Block { span, .. } => span,
+            Expr::InterpolatedString { span, .. } => span,
         }
     }
 }
@@ -378,6 +389,47 @@ fn parse_fn_arg(node: Node, source: &[u8]) -> Expr {
     }
 }
 
+/// Check if a string node has interpolation children
+fn has_interpolation(str_node: &Node) -> bool {
+    for child in named_children(str_node) {
+        if child.kind() == "interpolation" {
+            return true;
+        }
+    }
+    false
+}
+
+/// Parse a string with interpolation into segments
+fn parse_interpolated_string(str_node: Node, source: &[u8]) -> Vec<StringSegment> {
+    let mut segments = Vec::new();
+
+    for child in named_children(&str_node) {
+        match child.kind() {
+            "string_content" => {
+                let text = node_text(&child, source);
+                segments.push(StringSegment::Text(text.to_string()));
+            }
+            "escape_sequence" => {
+                // Unescape the escape sequence
+                let text = node_text(&child, source);
+                let unescaped = snailquote::unescape(&format!("\"{}\"", text))
+                    .expect("escape sequence parse error");
+                // Remove the surrounding quotes that we added
+                let unescaped = &unescaped[1..unescaped.len()-1];
+                segments.push(StringSegment::Text(unescaped.to_string()));
+            }
+            "interpolation" => {
+                let expr_node = child_by_field(&child, "expr")
+                    .expect("interpolation must have expr field");
+                segments.push(StringSegment::Interpolated(Box::new(parse_expr(expr_node, source))));
+            }
+            _ => {}
+        }
+    }
+
+    segments
+}
+
 fn parse_value(node: Node, source: &[u8]) -> Value {
     // For composite value nodes, get the actual value child
     let value_node = if node.kind() == "value" {
@@ -393,8 +445,17 @@ fn parse_value(node: Node, source: &[u8]) -> Value {
                 .expect("int parse error"),
         ),
         "str" => {
-            let text = node_text(&value_node, source);
-            Value::Str(snailquote::unescape(text).expect("str parse error"))
+            // Check if this string has interpolation
+            if has_interpolation(&value_node) {
+                // This should not happen here - interpolated strings should be
+                // detected at parse_expr level, not in parse_value
+                // But for safety, parse it as a plain string
+                let text = node_text(&value_node, source);
+                Value::Str(snailquote::unescape(text).expect("str parse error"))
+            } else {
+                let text = node_text(&value_node, source);
+                Value::Str(snailquote::unescape(text).expect("str parse error"))
+            }
         }
         "bool" => Value::Bool(
             node_text(&value_node, source)
@@ -444,13 +505,31 @@ fn parse_block(node: Node, source: &[u8]) -> Expr {
 fn parse_expr(node: Node, source: &[u8]) -> Expr {
     match node.kind() {
         // Primary expressions
-        "int" | "str" | "bool" => {
+        "int" | "bool" => {
             let span = Span::from_node(&node);
             Expr::Value(parse_value(node, source), span)
         }
+        "str" => {
+            let span = Span::from_node(&node);
+            // Check if this string has interpolation
+            if has_interpolation(&node) {
+                let segments = parse_interpolated_string(node, source);
+                Expr::InterpolatedString { segments, span }
+            } else {
+                Expr::Value(parse_value(node, source), span)
+            }
+        }
         "value" => {
             let span = Span::from_node(&node);
-            Expr::Value(parse_value(node, source), span)
+            // Get the actual value child
+            let value_child = node.named_child(0).expect("value node must have a child");
+            // Check if it's a string with interpolation
+            if value_child.kind() == "str" && has_interpolation(&value_child) {
+                let segments = parse_interpolated_string(value_child, source);
+                Expr::InterpolatedString { segments, span }
+            } else {
+                Expr::Value(parse_value(node, source), span)
+            }
         }
         "variable" => parse_variable(node, source),
         "fn_call" => parse_call(node, source),
@@ -949,6 +1028,19 @@ mod tests {
                     e1.len() == e2.len()
                         && e1.iter().zip(e2.iter()).all(|(a, b)| a.eq_ignore_spans(b))
                 }
+                (
+                    Expr::InterpolatedString { segments: s1, .. },
+                    Expr::InterpolatedString { segments: s2, .. },
+                ) => {
+                    s1.len() == s2.len()
+                        && s1.iter().zip(s2.iter()).all(|(seg1, seg2)| match (seg1, seg2) {
+                            (StringSegment::Text(t1), StringSegment::Text(t2)) => t1 == t2,
+                            (StringSegment::Interpolated(e1), StringSegment::Interpolated(e2)) => {
+                                e1.eq_ignore_spans(e2)
+                            }
+                            _ => false,
+                        })
+                }
                 _ => false,
             }
         }
@@ -1406,6 +1498,56 @@ mod tests {
                         span: dummy_span(),
                     },
                     Expr::Value(Value::Int(42), dummy_span()),
+                ],
+                span: dummy_span(),
+            },
+        ),
+        // String interpolation parsing tests
+        parse_interpolation_simple: (
+            r#"main = "hello {42}";"#,
+            Expr::InterpolatedString {
+                segments: vec![
+                    StringSegment::Text("hello ".to_string()),
+                    StringSegment::Interpolated(Box::new(Expr::Value(Value::Int(42), dummy_span()))),
+                ],
+                span: dummy_span(),
+            },
+        ),
+        parse_interpolation_multiple: (
+            r#"main = "{1} and {2}";"#,
+            Expr::InterpolatedString {
+                segments: vec![
+                    StringSegment::Interpolated(Box::new(Expr::Value(Value::Int(1), dummy_span()))),
+                    StringSegment::Text(" and ".to_string()),
+                    StringSegment::Interpolated(Box::new(Expr::Value(Value::Int(2), dummy_span()))),
+                ],
+                span: dummy_span(),
+            },
+        ),
+        parse_interpolation_with_expression: (
+            r#"main = "result: {1 + 1}";"#,
+            Expr::InterpolatedString {
+                segments: vec![
+                    StringSegment::Text("result: ".to_string()),
+                    StringSegment::Interpolated(Box::new(Expr::Call {
+                        fn_name: "+".to_string(),
+                        is_infix: true,
+                        arguments: vec![
+                            Expr::Value(Value::Int(1), dummy_span()),
+                            Expr::Value(Value::Int(1), dummy_span()),
+                        ],
+                        span: dummy_span(),
+                    })),
+                ],
+                span: dummy_span(),
+            },
+        ),
+        parse_interpolation_adjacent: (
+            r#"main = "{1}{2}";"#,
+            Expr::InterpolatedString {
+                segments: vec![
+                    StringSegment::Interpolated(Box::new(Expr::Value(Value::Int(1), dummy_span()))),
+                    StringSegment::Interpolated(Box::new(Expr::Value(Value::Int(2), dummy_span()))),
                 ],
                 span: dummy_span(),
             },

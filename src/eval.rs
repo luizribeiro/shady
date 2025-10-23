@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use crate::ast::{
     get_fn_by_name, Expr, FnDefinition, FnSignature, ParamSpec, Parameter, ProgramAST,
+    StringSegment,
 };
 use crate::builtins;
 use crate::error::{Result, ShadyError};
@@ -249,6 +250,22 @@ pub fn eval_expr_with_type(
                 });
             }
             Ok(Value::List { inner_type, values })
+        }
+        Expr::InterpolatedString { segments, .. } => {
+            // Evaluate each segment and concatenate into a final string
+            let mut result = String::new();
+            for segment in segments {
+                match segment {
+                    StringSegment::Text(text) => {
+                        result.push_str(text);
+                    }
+                    StringSegment::Interpolated(expr) => {
+                        let value = eval_expr_with_type(local_context, context, expr, None)?;
+                        result.push_str(&value.to_string());
+                    }
+                }
+            }
+            Ok(Value::Str(result))
         }
     }
 }
@@ -503,6 +520,16 @@ mod tests {
         eval_block_simple: ("{ 42 }", Value::Int(42)),
         eval_block_returns_last: ("{ 1; 2; 3 }", Value::Int(3)),
         eval_block_with_computation: ("{ 1 + 1; 2 + 2 }", Value::Int(4)),
+        // String interpolation tests
+        eval_interpolation_simple: (r#""hello {1 + 1}""#, Value::Str("hello 2".to_string())),
+        eval_interpolation_multiple: (r#""x={1}, y={2}""#, Value::Str("x=1, y=2".to_string())),
+        eval_interpolation_with_string: (r#""hello {"world"}""#, Value::Str("hello world".to_string())),
+        eval_interpolation_with_bool: (r#""value: {true}""#, Value::Str("value: true".to_string())),
+        eval_interpolation_with_expression: (r#""result: {2 * 3 + 4}""#, Value::Str("result: 10".to_string())),
+        eval_interpolation_empty: (r#""test""#, Value::Str("test".to_string())),
+        eval_interpolation_only_expr: (r#""{42}""#, Value::Str("42".to_string())),
+        eval_interpolation_adjacent: (r#""{1}{2}{3}""#, Value::Str("123".to_string())),
+        eval_interpolation_with_comparison: (r#""is true: {1 == 1}""#, Value::Str("is true: true".to_string())),
     }
 
     #[test]

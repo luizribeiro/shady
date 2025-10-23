@@ -35,12 +35,12 @@ cargo run -- examples/example.shady
 Create a file `hello.shady`:
 
 ```shady
-# Simple function that prints a greeting
-public greet $name: str = print ("Hello, " + $name + "!");
+# Simple function that prints a greeting using string interpolation
+public greet $name: str = print "Hello, {$name}!";
 
 # Combines type safety with external command execution
 public greet-uppercase $name: str =
-  exec ((echo ("Hello, " + $name + "!")) > (tr "a-z" "A-Z"));
+  exec (echo "Hello, {$name}!" > tr "a-z" "A-Z");
 ```
 
 Run it as a CLI:
@@ -75,6 +75,41 @@ public safe-divide $a: int $b: int -> int =
     $a / $b;
 ```
 
+### String Interpolation
+
+Embed expressions directly in strings using `{expr}` syntax. Any expression can be interpolated, and the result is automatically converted to a string:
+
+```shady
+# Simple variable interpolation
+public greet $name: str = print "Hello, {$name}!";
+
+# Arithmetic expressions
+public show-result $x: int $y: int =
+  print "{$x} + {$y} = {$x + $y}";
+
+# Nested expressions and function calls
+public deployment-status $version: str $server: str =
+  print "Deploying v{$version} to {$server} at {stdout (date +%H:%M)}";
+
+# Boolean expressions
+public check-value $x: int =
+  print "Value {$x} is {if ($x > 10) "large" else "small"}";
+
+# Mix interpolation with literals
+public format-list $count: int =
+  print "Found {$count} item{if ($count == 1) "" else "s"}";
+```
+
+String interpolation makes string building more readable compared to concatenation:
+
+```shady
+# Before (string concatenation)
+print ("User " + $name + " logged in at " + (stdout (date)));
+
+# After (string interpolation)
+print "User {$name} logged in at {stdout (date)}";
+```
+
 ### Process Management
 
 External commands are first-class citizens. Shady automatically spawns processes and provides access to their streams:
@@ -99,7 +134,7 @@ public top-committers =
 
 # Mix typed data with process output
 public deploy-info $version: str =
-  print ("Deploying version " + $version + " to " + (get-git-branch));
+  print "Deploying version {$version} to {get-git-branch}";
 ```
 
 ### Sequential Execution
@@ -109,7 +144,7 @@ Use `seq` to orchestrate complex workflows:
 ```shady
 # Automated deployment pipeline
 public deploy $server: str $version: str = seq [
-  echo ("Starting deployment of v" + $version + " to " + $server);
+  echo "Starting deployment of v{$version} to {$server}";
   git fetch --tags;
   git checkout $version;
   cargo test;
@@ -172,7 +207,7 @@ public serve
   $port: int (8080, option)
   $host: str ("localhost", option)
 = seq [
-  echo ("Starting server on " + $host + ":" + (to_string $port));
+  echo "Starting server on {$host}:{$port}";
   python3 -m http.server $port --bind $host;
 ];
 
@@ -211,7 +246,7 @@ factorial_impl $n: int $acc: int -> int =
 
 # Public interface with nice output
 public factorial $n: int =
-  print ((to_string $n) + "! = " + (to_string (factorial_impl $n 1)));
+  print "{$n}! = {factorial_impl $n 1}";
 
 # Recursive file processing
 count_lines_impl $files: [str] $total: int -> int =

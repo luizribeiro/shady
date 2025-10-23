@@ -126,19 +126,26 @@ module.exports = grammar({
       repeat(choice(
         $.string_content,
         $.escape_sequence,
+        $.interpolation,
       )),
       '"',
     ),
 
-    string_content: $ => token.immediate(prec(1, /[^"\\]+/)),
+    string_content: $ => token.immediate(prec(1, /[^"\\{]+/)),
 
     escape_sequence: $ => token.immediate(seq(
       '\\',
       choice(
-        /["\\/bfnrt]/,
+        /["\\/bfnrt{}]/,
         seq('u', /[0-9a-fA-F]{4}/),
       ),
     )),
+
+    interpolation: $ => seq(
+      '{',
+      field('expr', $.expr),
+      '}',
+    ),
 
     bool: $ => choice('true', 'false'),
 
