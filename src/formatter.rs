@@ -105,6 +105,18 @@ impl<'a> Formatter<'a> {
             .push_str(&" ".repeat(self.current_indent));
     }
 
+    fn current_line_length(&self) -> usize {
+        self.output
+            .lines()
+            .last()
+            .map(|line| line.len())
+            .unwrap_or(0)
+    }
+
+    fn would_exceed_max_length(&self, additional: usize) -> bool {
+        self.current_line_length() + additional > self.config.max_line_length
+    }
+
     fn format_comment(&mut self, node: &tree_sitter::Node) {
         if let Ok(text) = node.utf8_text(self.source_bytes) {
             self.output.push_str(text);
@@ -143,11 +155,26 @@ impl<'a> Formatter<'a> {
             self.format_type(&return_type);
         }
 
-        // Equals sign
-        self.output.push_str(" = ");
-
-        // Body
+        // Body - check if it would exceed line length
         if let Some(body) = node.child_by_field_name("body") {
+            // Get the body text to estimate length
+            if let Ok(body_text) = body.utf8_text(self.source_bytes) {
+                let body_length = body_text.len();
+                // Check if " = <body>;" would exceed max line length
+                if self.would_exceed_max_length(3 + body_length + 1) {
+                    // Wrap to new line with indentation
+                    self.output.push_str(" =\n");
+                    self.indent();
+                    self.write_indent();
+                    self.format_expression(&body, false);
+                    self.output.push(';');
+                    self.dedent();
+                    return;
+                }
+            }
+
+            // Fits on one line
+            self.output.push_str(" = ");
             self.format_expression(&body, false);
         }
 

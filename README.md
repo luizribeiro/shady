@@ -77,8 +77,7 @@ public safe-divide $a: int $b: int -> int =
 
 # Lambda expressions enable functional composition
 public double-twice $x: int -> int =
-  first (map (lambda $y -> $y * 2)
-             (map (lambda $z -> $z * 2) [$x]));
+  first (map (lambda $y -> $y * 2) (map (lambda $z -> $z * 2) [$x]));
 ```
 
 ### String Interpolation
@@ -90,8 +89,7 @@ Embed expressions directly in strings using `{expr}` syntax. Any expression can 
 public greet $name: str = print "Hello, {$name}!";
 
 # Arithmetic expressions
-public show-result $x: int $y: int =
-  print "{$x} + {$y} = {$x + $y}";
+public show-result $x: int $y: int = print "{$x} + {$y} = {$x + $y}";
 
 # Nested expressions and function calls
 public deployment-status $version: str $server: str =
@@ -99,13 +97,11 @@ public deployment-status $version: str $server: str =
 
 # Boolean expressions
 public check-value $x: int =
-  print ("Value " + to_string $x + " is " +
-         if ($x > 10) "large" else "small");
+  print ("Value " + to_string $x + " is " + if ($x > 10) "large" else "small");
 
 # Mix interpolation with literals
 public format-list $count: int =
-  print ("Found " + to_string $count + " item" +
-         if ($count == 1) "" else "s");
+  print ("Found " + to_string $count + " item" + if ($count == 1) "" else "s");
 ```
 
 String interpolation makes string building more readable compared to concatenation:
@@ -135,8 +131,7 @@ public top-committers = lines (git log --oneline > head -10);
 
 # Mix typed data with process output
 public deploy-info $version: str =
-  print ("Deploying version " + $version + " to " +
-         get-git-branch);
+  print ("Deploying version " + $version + " to " + get-git-branch);
 ```
 
 ### Sequential Execution
@@ -145,21 +140,23 @@ Use `seq` to orchestrate complex workflows:
 
 ```shady
 # Automated deployment pipeline
-public deploy $server: str $version: str = seq [
-  echo ("Starting deployment of v" + $version + " to " + $server);
-  git fetch --tags;
-  git checkout $version;
-  cargo test;
-  cargo build --release;
-  echo "Deployment complete!";
-];
+public deploy $server: str $version: str =
+  seq [
+    echo ("Starting deployment of v" + $version + " to " + $server);
+    git fetch --tags;
+    git checkout $version;
+    cargo test;
+    cargo build --release;
+    echo "Deployment complete!";
+  ];
 
 # Database backup with verification
-public backup-database $name: str = seq [
-  echo ("Backing up database: " + $name);
-  pg_dump $name;
-  echo "Backup complete";
-];
+public backup-database $name: str =
+  seq [
+    echo ("Backing up database: " + $name);
+    pg_dump $name;
+    echo "Backup complete";
+  ];
 ```
 
 ### Conditional Expressions
@@ -350,15 +347,11 @@ public get-editor = env "EDITOR" "vim";
 
 # Build dynamic paths from environment
 public backup-to-home $filename: str =
-  exec (cp $filename (env "HOME" "/tmp" + "/backup/" +
-                      $filename));
+  exec (cp $filename (env "HOME" "/tmp" + "/backup/" + $filename));
 
 # Environment-aware configuration
 public configure =
-  if (env "ENV" "dev" == "prod")
-    echo "Using production config"
-  else
-    echo "Using development config";
+  if (env "ENV" "dev" == "prod") echo "Using production config" else echo "Using development config";
 ```
 
 ## Real-World Examples
@@ -367,20 +360,22 @@ public configure =
 
 ```shady
 # Multi-server deployment with health checks
-public deploy-cluster $version: str = seq [
-  echo ("Deploying " + $version + " to cluster");
-  docker pull myapp;
-  docker compose up -d;
-  echo "Cluster deployment complete!";
-];
+public deploy-cluster $version: str =
+  seq [
+    echo ("Deploying " + $version + " to cluster");
+    docker pull myapp;
+    docker compose up -d;
+    echo "Cluster deployment complete!";
+  ];
 
 # Automated backup with rotation
-public backup-all = seq [
-  echo ("Starting backup at " + stdout (date));
-  pg_dump production;
-  tar czf backup.tgz /var/www;
-  echo "Backup complete";
-];
+public backup-all =
+  seq [
+    echo ("Starting backup at " + stdout (date));
+    pg_dump production;
+    tar czf backup.tgz /var/www;
+    echo "Backup complete";
+  ];
 ```
 
 ### Development Workflow Automation
@@ -456,8 +451,7 @@ public analyze-files $files: [str] =
 
 # Transform and filter with map
 public process-numbers $nums: [int] =
-  filter (lambda $x -> $x > 10)
-         (map (lambda $y -> $y * 2) $nums);
+  filter (lambda $x -> $x > 10) (map (lambda $y -> $y * 2) $nums);
 
 # Parallel-style processing with map
 public format-list $items: [str] =
