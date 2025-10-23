@@ -185,10 +185,12 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
             };
             builtins.insert(
                 signature,
-                Box::new(move |mut args| -> crate::error::Result<crate::types::Value> {
-                    #args_prog
-                    #result_conversion
-                }),
+                crate::eval::Builtin::Pure(
+                    Box::new(move |mut args| -> crate::error::Result<crate::types::Value> {
+                        #args_prog
+                        #result_conversion
+                    })
+                ),
             );
         }
     }

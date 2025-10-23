@@ -22,4 +22,6 @@ use crate::builtins::proc::*;
 mod str;
 use crate::builtins::str::*;
 
+pub mod functional;
+
 setup_builtins!();

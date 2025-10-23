@@ -10,10 +10,18 @@ use crate::builtins;
 use crate::error::{Result, ShadyError};
 use crate::types::{Proc, Type, Value};
 
+/// Builtin function types: Pure (eagerly evaluated) or Eval (special forms that need eval access)
+pub enum Builtin {
+    /// Pure builtin: receives evaluated arguments
+    Pure(Box<dyn Fn(Vec<Value>) -> Result<Value>>),
+    /// Eval builtin: receives unevaluated expressions and evaluation contexts (for special forms)
+    Eval(Box<dyn Fn(&[Expr], &LocalContext, &ShadyContext) -> Result<Value>>),
+}
+
 // FnSignature contains interior mutability through Value -> Proc -> Rc<RefCell<Child>>,
 // but the Hash implementation only uses fn_name and is_infix, which are immutable.
 #[allow(clippy::mutable_key_type)]
-pub type BuiltinIndex = HashMap<FnSignature, Box<dyn Fn(Vec<Value>) -> Result<Value>>>;
+pub type BuiltinIndex = HashMap<FnSignature, Builtin>;
 
 /// Resource limits for execution safety
 #[derive(Debug, Clone)]
@@ -31,14 +39,8 @@ impl Default for ResourceLimits {
     }
 }
 
-fn get_builtin_fn<'a>(
-    context: &'a ShadyContext,
-    signature: &'a FnSignature,
-) -> Option<&'a dyn Fn(Vec<Value>) -> Result<Value>> {
-    match context.builtins.get_key_value(signature) {
-        Some((_, f)) => Some(f.as_ref()),
-        None => None,
-    }
+fn get_builtin<'a>(context: &'a ShadyContext, signature: &'a FnSignature) -> Option<&'a Builtin> {
+    context.builtins.get(signature)
 }
 
 fn get_builtins_by_name<'a>(
@@ -129,6 +131,11 @@ pub fn build_context_with_limits(
     let mut builtins: BuiltinIndex = HashMap::new();
 
     builtins::setup_builtins(&mut builtins);
+
+    // Register higher-order functional primitives (Eval builtins)
+    builtins::functional::setup_map_builtin(&mut builtins);
+    builtins::functional::setup_filter_builtin(&mut builtins);
+    builtins::functional::setup_reduce_builtin(&mut builtins);
 
     ShadyContext {
         filename,
@@ -309,27 +316,6 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
         _ => return Err(ShadyError::EvalError("not a call".to_string())),
     };
 
-    // Handle higher-order functions that work with lambdas
-    // These are special because they need to evaluate lambdas, which requires eval access
-    match fn_name.as_str() {
-        "map" if arg_exprs.len() == 2 => {
-            return eval_map(local_context, context, &arg_exprs[0], &arg_exprs[1]);
-        }
-        "filter" if arg_exprs.len() == 2 => {
-            return eval_filter(local_context, context, &arg_exprs[0], &arg_exprs[1]);
-        }
-        "reduce" if arg_exprs.len() == 3 => {
-            return eval_reduce(
-                local_context,
-                context,
-                &arg_exprs[0],
-                &arg_exprs[1],
-                &arg_exprs[2],
-            );
-        }
-        _ => {}
-    }
-
     // Check if fn_name is a variable containing a lambda
     if let Some(Value::Lambda(lambda)) = local_context.vars.get(fn_name) {
         // Evaluate arguments
@@ -394,7 +380,18 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
         );
     }
 
-    // Try to find the function to get parameter types
+    // Check if there's an Eval builtin with this name first
+    // Eval builtins need unevaluated expressions, so we check them before evaluating args
+    if let Some(builtin_sigs) = get_builtins_by_name(context, fn_name) {
+        for sig in builtin_sigs {
+            if let Some(Builtin::Eval(f)) = context.builtins.get(sig) {
+                // Found an Eval builtin - call it with unevaluated expressions
+                return f(arg_exprs, local_context, context);
+            }
+        }
+    }
+
+    // Not an Eval builtin, so evaluate arguments for Pure builtins and user functions
     let param_types: Option<Vec<Type>> = {
         // Check if it's a user-defined function
         if let Some(fun) = get_fn_by_name(&context.program, fn_name) {
@@ -452,8 +449,15 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
         return_type: Type::Any,
     };
 
-    if let Some(builtin_fn) = get_builtin_fn(context, &signature) {
-        return builtin_fn(arguments);
+    if let Some(builtin) = get_builtin(context, &signature) {
+        return match builtin {
+            Builtin::Pure(f) => f(arguments),
+            Builtin::Eval(f) => {
+                // Should not reach here as we checked Eval builtins above
+                // But handle it anyway for safety
+                f(arg_exprs, local_context, context)
+            }
+        };
     }
 
     if let Some(fns) = get_builtins_by_name(context, &signature.fn_name) {
@@ -499,257 +503,6 @@ fn eval_fn(local_context: &LocalContext, context: &ShadyContext, expr: &Expr) ->
     let program = signature.fn_name;
     let args = arguments.iter().map(|a| a.to_string()).collect();
     Ok(Value::Proc(spawn(context, program, args)?))
-}
-
-/// Implements map: applies a lambda to each element of a list
-/// map $fn: fn(T) -> R $list: [T] -> [R]
-fn eval_map(
-    local_context: &LocalContext,
-    context: &ShadyContext,
-    lambda_expr: &Expr,
-    list_expr: &Expr,
-) -> Result<Value> {
-    // Evaluate the lambda
-    let lambda_val = eval_expr_with_type(local_context, context, lambda_expr, None)?;
-    let lambda = match lambda_val {
-        Value::Lambda(l) => l,
-        _ => {
-            return Err(ShadyError::TypeMismatch {
-                expected: "lambda function".to_string(),
-                actual: format!("{}", lambda_val.get_type()),
-                span: lambda_expr.span().to_source_span(),
-            })
-        }
-    };
-
-    // Check that lambda takes exactly one parameter
-    if lambda.parameters.len() != 1 {
-        return Err(ShadyError::FunctionSignatureMismatch {
-            name: "map".to_string(),
-            arg_types: format!(
-                "map requires a lambda with 1 parameter, got {}",
-                lambda.parameters.len()
-            ),
-            span: lambda_expr.span().to_source_span(),
-        });
-    }
-
-    // Evaluate the list
-    let list_val = eval_expr_with_type(local_context, context, list_expr, None)?;
-    let (_inner_type, values) = match list_val {
-        Value::List { inner_type, values } => (inner_type, values),
-        _ => {
-            return Err(ShadyError::TypeMismatch {
-                expected: "list".to_string(),
-                actual: format!("{}", list_val.get_type()),
-                span: list_expr.span().to_source_span(),
-            })
-        }
-    };
-
-    // Apply lambda to each element
-    let mut result_values = Vec::new();
-    let mut result_type: Option<Type> = None;
-
-    for value in values {
-        // Create context with captured environment + parameter binding
-        let mut lambda_vars = lambda.captured_env.clone();
-        lambda_vars.insert(lambda.parameters[0].clone(), value);
-
-        let lambda_context = LocalContext {
-            vars: lambda_vars,
-            depth: local_context.depth + 1,
-        };
-
-        // Evaluate lambda body
-        let result = eval_expr_with_type(
-            &lambda_context,
-            context,
-            &lambda.body,
-            Some(&lambda.return_type),
-        )?;
-
-        // Determine result type from first element
-        if result_type.is_none() {
-            result_type = Some(result.get_type());
-        }
-
-        result_values.push(result);
-    }
-
-    // Handle empty list case
-    let final_type = result_type.unwrap_or_else(|| lambda.return_type.clone());
-
-    Ok(Value::List {
-        inner_type: final_type,
-        values: result_values,
-    })
-}
-
-/// Implements filter: keeps only elements where lambda returns true
-/// filter $fn: fn(T) -> bool $list: [T] -> [T]
-fn eval_filter(
-    local_context: &LocalContext,
-    context: &ShadyContext,
-    lambda_expr: &Expr,
-    list_expr: &Expr,
-) -> Result<Value> {
-    // Evaluate the lambda
-    let lambda_val = eval_expr_with_type(local_context, context, lambda_expr, None)?;
-    let lambda = match lambda_val {
-        Value::Lambda(l) => l,
-        _ => {
-            return Err(ShadyError::TypeMismatch {
-                expected: "lambda function".to_string(),
-                actual: format!("{}", lambda_val.get_type()),
-                span: lambda_expr.span().to_source_span(),
-            })
-        }
-    };
-
-    // Check that lambda takes exactly one parameter
-    if lambda.parameters.len() != 1 {
-        return Err(ShadyError::FunctionSignatureMismatch {
-            name: "filter".to_string(),
-            arg_types: format!(
-                "filter requires a lambda with 1 parameter, got {}",
-                lambda.parameters.len()
-            ),
-            span: lambda_expr.span().to_source_span(),
-        });
-    }
-
-    // Check that lambda returns bool
-    if lambda.return_type != Type::Bool && lambda.return_type != Type::Any {
-        return Err(ShadyError::TypeMismatch {
-            expected: "bool".to_string(),
-            actual: format!("{}", lambda.return_type),
-            span: lambda_expr.span().to_source_span(),
-        });
-    }
-
-    // Evaluate the list
-    let list_val = eval_expr_with_type(local_context, context, list_expr, None)?;
-    let (inner_type, values) = match list_val {
-        Value::List { inner_type, values } => (inner_type, values),
-        _ => {
-            return Err(ShadyError::TypeMismatch {
-                expected: "list".to_string(),
-                actual: format!("{}", list_val.get_type()),
-                span: list_expr.span().to_source_span(),
-            })
-        }
-    };
-
-    // Filter elements where lambda returns true
-    let mut result_values = Vec::new();
-
-    for value in values {
-        // Create context with captured environment + parameter binding
-        let mut lambda_vars = lambda.captured_env.clone();
-        lambda_vars.insert(lambda.parameters[0].clone(), value.clone());
-
-        let lambda_context = LocalContext {
-            vars: lambda_vars,
-            depth: local_context.depth + 1,
-        };
-
-        // Evaluate lambda body
-        let result =
-            eval_expr_with_type(&lambda_context, context, &lambda.body, Some(&Type::Bool))?;
-
-        // Check result is bool
-        match result {
-            Value::Bool(true) => result_values.push(value),
-            Value::Bool(false) => {}
-            _ => {
-                return Err(ShadyError::TypeMismatch {
-                    expected: "bool".to_string(),
-                    actual: format!("{}", result.get_type()),
-                    span: lambda_expr.span().to_source_span(),
-                })
-            }
-        }
-    }
-
-    Ok(Value::List {
-        inner_type,
-        values: result_values,
-    })
-}
-
-/// Implements reduce: folds a list using a lambda and initial value
-/// reduce $fn: fn(Acc, T) -> Acc $init: Acc $list: [T] -> Acc
-fn eval_reduce(
-    local_context: &LocalContext,
-    context: &ShadyContext,
-    lambda_expr: &Expr,
-    init_expr: &Expr,
-    list_expr: &Expr,
-) -> Result<Value> {
-    // Evaluate the lambda
-    let lambda_val = eval_expr_with_type(local_context, context, lambda_expr, None)?;
-    let lambda = match lambda_val {
-        Value::Lambda(l) => l,
-        _ => {
-            return Err(ShadyError::TypeMismatch {
-                expected: "lambda function".to_string(),
-                actual: format!("{}", lambda_val.get_type()),
-                span: lambda_expr.span().to_source_span(),
-            })
-        }
-    };
-
-    // Check that lambda takes exactly two parameters (accumulator, element)
-    if lambda.parameters.len() != 2 {
-        return Err(ShadyError::FunctionSignatureMismatch {
-            name: "reduce".to_string(),
-            arg_types: format!(
-                "reduce requires a lambda with 2 parameters (accumulator, element), got {}",
-                lambda.parameters.len()
-            ),
-            span: lambda_expr.span().to_source_span(),
-        });
-    }
-
-    // Evaluate the initial value
-    let mut accumulator = eval_expr_with_type(local_context, context, init_expr, None)?;
-
-    // Evaluate the list
-    let list_val = eval_expr_with_type(local_context, context, list_expr, None)?;
-    let values = match list_val {
-        Value::List { values, .. } => values,
-        _ => {
-            return Err(ShadyError::TypeMismatch {
-                expected: "list".to_string(),
-                actual: format!("{}", list_val.get_type()),
-                span: list_expr.span().to_source_span(),
-            })
-        }
-    };
-
-    // Fold the list
-    for value in values {
-        // Create context with captured environment + parameter bindings
-        let mut lambda_vars = lambda.captured_env.clone();
-        lambda_vars.insert(lambda.parameters[0].clone(), accumulator.clone());
-        lambda_vars.insert(lambda.parameters[1].clone(), value);
-
-        let lambda_context = LocalContext {
-            vars: lambda_vars,
-            depth: local_context.depth + 1,
-        };
-
-        // Evaluate lambda body
-        accumulator = eval_expr_with_type(
-            &lambda_context,
-            context,
-            &lambda.body,
-            Some(&lambda.return_type),
-        )?;
-    }
-
-    Ok(accumulator)
 }
 
 fn spawn(context: &ShadyContext, program: String, args: Vec<String>) -> Result<Proc> {
