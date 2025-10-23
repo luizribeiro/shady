@@ -6,3 +6,15 @@ devenv.local.nix
 
 # Added by cargo
 target
+
+# Tree-sitter
+node_modules/
+package-lock.json
+
+# Test files
+*.shady
+!tests/**/*.shady
+!examples/**/*.shady
+
+# Claude Code local settings
+.claude/settings.local.json

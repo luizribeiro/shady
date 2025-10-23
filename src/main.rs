@@ -1,13 +1,10 @@
-extern crate pest;
-#[macro_use]
-extern crate pest_derive;
-
 mod ast;
 mod builtins;
 mod cli;
 mod error;
 mod eval;
 mod lsp;
+mod parser;
 mod types;
 
 use clap::Parser;

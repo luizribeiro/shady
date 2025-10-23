@@ -87,8 +87,19 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
                     },
                 });
 
+                // Don't clone Proc values to avoid keeping pipe handles alive
+                let from_value_call = if quote!(#ty).to_string().contains("Proc") {
+                    quote! {
+                        crate::types::from_value::<#ty>(
+                            std::mem::replace(&mut args[#i], crate::types::Value::Int(0))
+                        )?
+                    }
+                } else {
+                    quote! { crate::types::from_value::<#ty>(args[#i].clone())? }
+                };
+
                 args_prog.extend(quote! {
-                    let #ident = crate::types::from_value::<#ty>(args[#i].clone())?;
+                    let #ident = #from_value_call;
                 });
 
                 call_prog.extend(quote! { #ident, });
@@ -180,7 +191,7 @@ pub fn builtin(args: TokenStream, input: TokenStream) -> TokenStream {
             };
             builtins.insert(
                 signature,
-                Box::new(move |args| -> crate::error::Result<crate::types::Value> {
+                Box::new(move |mut args| -> crate::error::Result<crate::types::Value> {
                     #args_prog
                     #result_conversion
                 }),

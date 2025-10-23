@@ -170,10 +170,7 @@ impl LanguageServer for Backend {
         // In a more complete implementation, we'd check cursor position
         // and show information about the function/variable under the cursor
         if let Some(fn_def) = ast.fn_definitions.first() {
-            let hover_text = format!(
-                "```shady\n{}\n```",
-                fn_def.signature
-            );
+            let hover_text = format!("```shady\n{}\n```", fn_def.signature);
 
             return Ok(Some(Hover {
                 contents: HoverContents::Markup(MarkupContent {
@@ -228,7 +225,8 @@ impl LanguageServer for Backend {
             }
 
             // Also check if the cursor is on a function call in the expression
-            if let Some(location) = find_function_call_definition(&ast, &doc.text, uri, &identifier) {
+            if let Some(location) = find_function_call_definition(&ast, &doc.text, uri, &identifier)
+            {
                 return Ok(Some(GotoDefinitionResponse::Scalar(location)));
             }
         }
@@ -261,7 +259,10 @@ impl LanguageServer for Backend {
         // Add user-defined functions
         for fn_def in &ast.fn_definitions {
             let detail = if fn_def.signature.parameters.is_empty() {
-                format!("{} -> {}", fn_def.signature.fn_name, fn_def.signature.return_type)
+                format!(
+                    "{} -> {}",
+                    fn_def.signature.fn_name, fn_def.signature.return_type
+                )
             } else {
                 fn_def.signature.to_string()
             };
@@ -272,7 +273,11 @@ impl LanguageServer for Backend {
                 detail: Some(detail),
                 documentation: Some(Documentation::String(format!(
                     "User-defined function{}",
-                    if fn_def.signature.is_public { " (public)" } else { "" }
+                    if fn_def.signature.is_public {
+                        " (public)"
+                    } else {
+                        ""
+                    }
                 ))),
                 ..Default::default()
             });
@@ -304,11 +309,12 @@ impl LanguageServer for Backend {
         };
 
         // Find the function call at the cursor position
-        let offset = position_to_offset(&doc.text, position);
+        let _offset = position_to_offset(&doc.text, position);
 
         // Get the line up to the cursor to find what function is being called
         let line_text = doc.text.lines().nth(position.line as usize).unwrap_or("");
-        let line_up_to_cursor = &line_text[..position.character.min(line_text.len() as u32) as usize];
+        let line_up_to_cursor =
+            &line_text[..position.character.min(line_text.len() as u32) as usize];
 
         // Try to extract the function name before the cursor
         if let Some(fn_name) = extract_function_name_at_cursor(line_up_to_cursor) {
@@ -453,14 +459,16 @@ fn find_function_call_definition(
                 // Check if this is actually a function definition (has '=' after parameters)
                 if line.contains('=') {
                     // Extract just the function name position
-                    let fn_name_col = if pattern.starts_with("public") || pattern.starts_with("infix") {
-                        col + pattern.len() - fn_name.len()
-                    } else {
-                        col
-                    };
+                    let fn_name_col =
+                        if pattern.starts_with("public") || pattern.starts_with("infix") {
+                            col + pattern.len() - fn_name.len()
+                        } else {
+                            col
+                        };
 
                     let start_pos = Position::new(line_num as u32, fn_name_col as u32);
-                    let end_pos = Position::new(line_num as u32, (fn_name_col + fn_name.len()) as u32);
+                    let end_pos =
+                        Position::new(line_num as u32, (fn_name_col + fn_name.len()) as u32);
 
                     return Some(Location {
                         uri: uri.clone(),
@@ -538,7 +546,11 @@ fn create_signature_info(signature: &crate::ast::FnSignature) -> SignatureInform
     SignatureInformation {
         label,
         documentation: None,
-        parameters: if parameters.is_empty() { None } else { Some(parameters) },
+        parameters: if parameters.is_empty() {
+            None
+        } else {
+            Some(parameters)
+        },
         active_parameter: None,
     }
 }
@@ -554,7 +566,10 @@ fn get_builtin_signature(fn_name: &str) -> Option<SignatureInformation> {
         "to_string" => ("to_string $i: int -> str", vec!["$i: int"]),
         "first" => ("first $list: [any] -> any", vec!["$list: [any]"]),
         "add_all" => ("add_all $list: [int] -> int", vec!["$list: [int]"]),
-        "env" => ("env $var_name: str $default: str -> str", vec!["$var_name: str", "$default: str"]),
+        "env" => (
+            "env $var_name: str $default: str -> str",
+            vec!["$var_name: str", "$default: str"],
+        ),
         "os" => ("os -> str", vec![]),
         "echo" => ("echo $msg: str -> proc", vec!["$msg: str"]),
         "cat" => ("cat $file: str -> proc", vec!["$file: str"]),
@@ -577,7 +592,11 @@ fn get_builtin_signature(fn_name: &str) -> Option<SignatureInformation> {
     Some(SignatureInformation {
         label: label.to_string(),
         documentation: None,
-        parameters: if parameters.is_empty() { None } else { Some(parameters) },
+        parameters: if parameters.is_empty() {
+            None
+        } else {
+            Some(parameters)
+        },
         active_parameter: None,
     })
 }
@@ -701,7 +720,7 @@ pub async fn run_server() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let (service, socket) = LspService::new(|client| Backend::new(client));
+    let (service, socket) = LspService::new(Backend::new);
     Server::new(stdin, stdout, socket).serve(service).await;
 }
 
@@ -976,16 +995,34 @@ add $a: int $b: int -> int = $a + $b;
         let text = "public main = echo \"Hello\";";
 
         // Test finding "public"
-        assert_eq!(find_identifier_at_position(text, 0), Some("public".to_string()));
-        assert_eq!(find_identifier_at_position(text, 3), Some("public".to_string()));
+        assert_eq!(
+            find_identifier_at_position(text, 0),
+            Some("public".to_string())
+        );
+        assert_eq!(
+            find_identifier_at_position(text, 3),
+            Some("public".to_string())
+        );
 
         // Test finding "main"
-        assert_eq!(find_identifier_at_position(text, 7), Some("main".to_string()));
-        assert_eq!(find_identifier_at_position(text, 10), Some("main".to_string()));
+        assert_eq!(
+            find_identifier_at_position(text, 7),
+            Some("main".to_string())
+        );
+        assert_eq!(
+            find_identifier_at_position(text, 10),
+            Some("main".to_string())
+        );
 
         // Test finding "echo"
-        assert_eq!(find_identifier_at_position(text, 14), Some("echo".to_string()));
-        assert_eq!(find_identifier_at_position(text, 17), Some("echo".to_string()));
+        assert_eq!(
+            find_identifier_at_position(text, 14),
+            Some("echo".to_string())
+        );
+        assert_eq!(
+            find_identifier_at_position(text, 17),
+            Some("echo".to_string())
+        );
 
         // Test finding nothing on whitespace
         assert_eq!(find_identifier_at_position(text, 6), None);
@@ -999,13 +1036,28 @@ add $a: int $b: int -> int = $a + $b;
         let text = "my_function = other_func 42;";
 
         // Test finding "my_function"
-        assert_eq!(find_identifier_at_position(text, 0), Some("my_function".to_string()));
-        assert_eq!(find_identifier_at_position(text, 5), Some("my_function".to_string()));
-        assert_eq!(find_identifier_at_position(text, 10), Some("my_function".to_string()));
+        assert_eq!(
+            find_identifier_at_position(text, 0),
+            Some("my_function".to_string())
+        );
+        assert_eq!(
+            find_identifier_at_position(text, 5),
+            Some("my_function".to_string())
+        );
+        assert_eq!(
+            find_identifier_at_position(text, 10),
+            Some("my_function".to_string())
+        );
 
         // Test finding "other_func"
-        assert_eq!(find_identifier_at_position(text, 14), Some("other_func".to_string()));
-        assert_eq!(find_identifier_at_position(text, 23), Some("other_func".to_string()));
+        assert_eq!(
+            find_identifier_at_position(text, 14),
+            Some("other_func".to_string())
+        );
+        assert_eq!(
+            find_identifier_at_position(text, 23),
+            Some("other_func".to_string())
+        );
     }
 
     #[test]
@@ -1014,15 +1066,24 @@ add $a: int $b: int -> int = $a + $b;
 
         // Find "main" on first line
         let main_offset = position_to_offset(text, Position::new(0, 7));
-        assert_eq!(find_identifier_at_position(text, main_offset), Some("main".to_string()));
+        assert_eq!(
+            find_identifier_at_position(text, main_offset),
+            Some("main".to_string())
+        );
 
         // Find "greet" on second line
         let greet_offset = position_to_offset(text, Position::new(1, 0));
-        assert_eq!(find_identifier_at_position(text, greet_offset), Some("greet".to_string()));
+        assert_eq!(
+            find_identifier_at_position(text, greet_offset),
+            Some("greet".to_string())
+        );
 
         // Find "name" on second line (first occurrence)
         let name1_offset = position_to_offset(text, Position::new(1, 7));
-        assert_eq!(find_identifier_at_position(text, name1_offset), Some("name".to_string()));
+        assert_eq!(
+            find_identifier_at_position(text, name1_offset),
+            Some("name".to_string())
+        );
     }
 
     #[test]
@@ -1109,7 +1170,10 @@ add $a: int $b: int -> int = $a + $b;
         // Add user-defined functions
         for fn_def in &ast.fn_definitions {
             let detail = if fn_def.signature.parameters.is_empty() {
-                format!("{} -> {}", fn_def.signature.fn_name, fn_def.signature.return_type)
+                format!(
+                    "{} -> {}",
+                    fn_def.signature.fn_name, fn_def.signature.return_type
+                )
             } else {
                 fn_def.signature.to_string()
             };
@@ -1120,7 +1184,11 @@ add $a: int $b: int -> int = $a + $b;
                 detail: Some(detail),
                 documentation: Some(Documentation::String(format!(
                     "User-defined function{}",
-                    if fn_def.signature.is_public { " (public)" } else { "" }
+                    if fn_def.signature.is_public {
+                        " (public)"
+                    } else {
+                        ""
+                    }
                 ))),
                 ..Default::default()
             });
@@ -1150,7 +1218,7 @@ add $a: int $b: int -> int = $a + $b;
         match parse_script(code) {
             Err(_) => {
                 let completions = get_builtin_completions();
-                assert!(completions.len() > 0);
+                assert!(!completions.is_empty());
             }
             Ok(_) => panic!("Expected parsing to fail"),
         }
@@ -1162,14 +1230,23 @@ add $a: int $b: int -> int = $a + $b;
 
         // Check specific completion details
         let exec_completion = completions.iter().find(|c| c.label == "exec").unwrap();
-        assert_eq!(exec_completion.detail, Some("exec $proc: proc -> int".to_string()));
+        assert_eq!(
+            exec_completion.detail,
+            Some("exec $proc: proc -> int".to_string())
+        );
         assert!(exec_completion.documentation.is_some());
 
         let stdout_completion = completions.iter().find(|c| c.label == "stdout").unwrap();
-        assert_eq!(stdout_completion.detail, Some("stdout $proc: proc -> str".to_string()));
+        assert_eq!(
+            stdout_completion.detail,
+            Some("stdout $proc: proc -> str".to_string())
+        );
 
         let first_completion = completions.iter().find(|c| c.label == "first").unwrap();
-        assert_eq!(first_completion.detail, Some("first $list: [any] -> any".to_string()));
+        assert_eq!(
+            first_completion.detail,
+            Some("first $list: [any] -> any".to_string())
+        );
     }
 
     #[test]
@@ -1185,7 +1262,10 @@ with_return -> int = 100;
         let mut completions = Vec::new();
         for fn_def in &ast.fn_definitions {
             let detail = if fn_def.signature.parameters.is_empty() {
-                format!("{} -> {}", fn_def.signature.fn_name, fn_def.signature.return_type)
+                format!(
+                    "{} -> {}",
+                    fn_def.signature.fn_name, fn_def.signature.return_type
+                )
             } else {
                 fn_def.signature.to_string()
             };
@@ -1193,10 +1273,16 @@ with_return -> int = 100;
         }
 
         // Check that we format details correctly
-        let simple_detail = completions.iter().find(|(name, _)| name == "simple").unwrap();
+        let simple_detail = completions
+            .iter()
+            .find(|(name, _)| name == "simple")
+            .unwrap();
         assert!(simple_detail.1.contains("simple"));
 
-        let with_params_detail = completions.iter().find(|(name, _)| name == "with_params").unwrap();
+        let with_params_detail = completions
+            .iter()
+            .find(|(name, _)| name == "with_params")
+            .unwrap();
         assert!(with_params_detail.1.contains("with_params"));
         assert!(with_params_detail.1.contains("int"));
         assert!(with_params_detail.1.contains("str"));
@@ -1207,16 +1293,34 @@ with_return -> int = 100;
     #[test]
     fn test_extract_function_name_at_cursor() {
         // Simple function call
-        assert_eq!(extract_function_name_at_cursor("echo "), Some("echo".to_string()));
-        assert_eq!(extract_function_name_at_cursor("echo $"), Some("echo".to_string()));
+        assert_eq!(
+            extract_function_name_at_cursor("echo "),
+            Some("echo".to_string())
+        );
+        assert_eq!(
+            extract_function_name_at_cursor("echo $"),
+            Some("echo".to_string())
+        );
 
         // Function call in expression
-        assert_eq!(extract_function_name_at_cursor("public main = echo "), Some("echo".to_string()));
-        assert_eq!(extract_function_name_at_cursor("result = stdout "), Some("stdout".to_string()));
+        assert_eq!(
+            extract_function_name_at_cursor("public main = echo "),
+            Some("echo".to_string())
+        );
+        assert_eq!(
+            extract_function_name_at_cursor("result = stdout "),
+            Some("stdout".to_string())
+        );
 
         // Function with parameters already typed
-        assert_eq!(extract_function_name_at_cursor("env "), Some("env".to_string()));
-        assert_eq!(extract_function_name_at_cursor("env $var "), Some("env".to_string()));
+        assert_eq!(
+            extract_function_name_at_cursor("env "),
+            Some("env".to_string())
+        );
+        assert_eq!(
+            extract_function_name_at_cursor("env $var "),
+            Some("env".to_string())
+        );
 
         // No function
         assert_eq!(extract_function_name_at_cursor("   "), None);
@@ -1248,7 +1352,7 @@ with_return -> int = 100;
 
     #[test]
     fn test_create_signature_info() {
-        use crate::ast::{FnSignature, Parameter, ParamSpec};
+        use crate::ast::{FnSignature, ParamSpec, Parameter};
         use crate::types::Type;
 
         // Simple function with no parameters
@@ -1292,20 +1396,18 @@ with_return -> int = 100;
 
     #[test]
     fn test_create_signature_info_parameter_offsets() {
-        use crate::ast::{FnSignature, Parameter, ParamSpec};
+        use crate::ast::{FnSignature, ParamSpec, Parameter};
         use crate::types::Type;
 
         let sig = FnSignature {
             is_public: false,
             is_infix: false,
             fn_name: "greet".to_string(),
-            parameters: vec![
-                Parameter {
-                    name: "name".to_string(),
-                    typ: Type::Str,
-                    spec: ParamSpec::default(),
-                },
-            ],
+            parameters: vec![Parameter {
+                name: "name".to_string(),
+                typ: Type::Str,
+                spec: ParamSpec::default(),
+            }],
             return_type: Type::Any,
         };
 
@@ -1334,7 +1436,11 @@ add $a: int $b: int -> int = $a + $b;
         let ast = parse_script(code).unwrap();
 
         // Find the "add" function
-        let add_fn = ast.fn_definitions.iter().find(|f| f.signature.fn_name == "add").unwrap();
+        let add_fn = ast
+            .fn_definitions
+            .iter()
+            .find(|f| f.signature.fn_name == "add")
+            .unwrap();
         let sig_info = create_signature_info(&add_fn.signature);
 
         assert!(sig_info.label.contains("add"));
@@ -1347,15 +1453,27 @@ add $a: int $b: int -> int = $a + $b;
     #[test]
     fn test_extract_function_name_edge_cases() {
         // Function with underscore
-        assert_eq!(extract_function_name_at_cursor("my_function "), Some("my_function".to_string()));
+        assert_eq!(
+            extract_function_name_at_cursor("my_function "),
+            Some("my_function".to_string())
+        );
 
         // After equals sign
-        assert_eq!(extract_function_name_at_cursor("x = echo "), Some("echo".to_string()));
+        assert_eq!(
+            extract_function_name_at_cursor("x = echo "),
+            Some("echo".to_string())
+        );
 
         // Multiple spaces
-        assert_eq!(extract_function_name_at_cursor("    echo    "), Some("echo".to_string()));
+        assert_eq!(
+            extract_function_name_at_cursor("    echo    "),
+            Some("echo".to_string())
+        );
 
         // With parentheses (shouldn't happen in Shady but let's be safe)
-        assert_eq!(extract_function_name_at_cursor("result = stdout("), Some("stdout".to_string()));
+        assert_eq!(
+            extract_function_name_at_cursor("result = stdout("),
+            Some("stdout".to_string())
+        );
     }
 }

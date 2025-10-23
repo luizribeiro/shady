@@ -1,15 +1,10 @@
 use crate::error::{Result, ShadyError};
+use crate::parser;
 use crate::types::{Type, Value};
 use miette::SourceSpan;
-use pest::iterators::Pair;
-use pest::pratt_parser::{Assoc, Op, PrattParser};
-use pest::Parser;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-
-#[derive(Parser)]
-#[grammar = "shady.pest"]
-pub struct ShadyParser;
+use tree_sitter::{Node, Parser as TSParser};
 
 /// Represents a span of source code for error reporting
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,11 +19,11 @@ impl Span {
         Self { offset, length }
     }
 
-    /// Create a Span from a Pest span
-    pub fn from_pest(span: pest::Span) -> Self {
+    /// Create a Span from a tree-sitter Node
+    pub fn from_node(node: &Node) -> Self {
         Self {
-            offset: span.start(),
-            length: span.end() - span.start(),
+            offset: node.start_byte(),
+            length: node.end_byte() - node.start_byte(),
         }
     }
 
@@ -149,134 +144,209 @@ impl Expr {
     }
 }
 
-fn parse_type(pair: Pair<Rule>) -> Type {
-    match pair.as_rule() {
-        Rule::type_int => Type::Int,
-        Rule::type_str => Type::Str,
-        Rule::type_bool => Type::Bool,
-        Rule::type_list => Type::List(Box::new(parse_type(pair.into_inner().next().unwrap()))),
-        _ => unreachable!(),
+/// Helper to get node text from source
+fn node_text<'a>(node: &Node, source: &'a [u8]) -> &'a str {
+    node.utf8_text(source).unwrap()
+}
+
+/// Helper to get a child node by field name
+fn child_by_field<'a>(node: &'a Node, field_name: &str) -> Option<Node<'a>> {
+    node.child_by_field_name(field_name)
+}
+
+/// Helper to get named children of a node
+fn named_children<'a>(node: &'a Node<'a>) -> Vec<Node<'a>> {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor).collect()
+}
+
+fn parse_type(node: Node, source: &[u8]) -> Type {
+    match node.kind() {
+        "type_int" => Type::Int,
+        "type_str" => Type::Str,
+        "type_bool" => Type::Bool,
+        "type_list" => {
+            let element_type = child_by_field(&node, "element_type")
+                .expect("type_list must have element_type field");
+            Type::List(Box::new(parse_type(element_type, source)))
+        }
+        "typ" => {
+            // typ is a wrapper node, get the actual type child
+            let type_child = node.named_child(0).expect("typ node must have a child");
+            parse_type(type_child, source)
+        }
+        _ => unreachable!("Unknown type: {}", node.kind()),
     }
 }
 
-fn parse_if(pair: Pair<Rule>) -> Expr {
-    let span = Span::from_pest(pair.as_span());
-    let pairs: Vec<Pair<Rule>> = pair.into_inner().collect();
-    match &pairs[..] {
-        [a, b, c] => Expr::If {
-            condition: Box::new(parse_expr(a.clone())),
-            when_true: Box::new(parse_expr(b.clone())),
-            when_false: Box::new(parse_expr(c.clone())),
-            span,
-        },
-        _ => unreachable!(),
+fn parse_if(node: Node, source: &[u8]) -> Expr {
+    let span = Span::from_node(&node);
+    let condition = child_by_field(&node, "condition").expect("if_expr must have condition");
+    let when_true = child_by_field(&node, "when_true").expect("if_expr must have when_true");
+    let when_false = child_by_field(&node, "when_false").expect("if_expr must have when_false");
+
+    Expr::If {
+        condition: Box::new(parse_expr(condition, source)),
+        when_true: Box::new(parse_expr(when_true, source)),
+        when_false: Box::new(parse_expr(when_false, source)),
+        span,
     }
 }
 
-fn parse_call(pair: Pair<Rule>) -> Expr {
-    let span = Span::from_pest(pair.as_span());
-    let mut fn_name: Option<String> = None;
+fn parse_call(node: Node, source: &[u8]) -> Expr {
+    let span = Span::from_node(&node);
+    let fn_name = child_by_field(&node, "name")
+        .map(|n| node_text(&n, source).to_string())
+        .expect("fn_call must have name field");
+
     let mut arguments: Vec<Expr> = Vec::new();
 
-    for inner_pair in pair.into_inner() {
-        match inner_pair.as_rule() {
-            Rule::fn_name => fn_name = Some(inner_pair.as_str().to_string()),
-            Rule::expr => arguments.push(parse_expr(inner_pair)),
-            x if is_value(x) => {
-                let value_span = Span::from_pest(inner_pair.as_span());
-                arguments.push(Expr::Value(parse_value(inner_pair), value_span))
-            }
-            Rule::unquoted_str_arg => {
-                let arg_span = Span::from_pest(inner_pair.as_span());
-                arguments.push(Expr::Value(
-                    Value::Str(inner_pair.as_str().to_string()),
-                    arg_span,
-                ))
-            }
-            _ => unreachable!("unknown rule type: {:?}", inner_pair.as_rule()),
-        }
+    // Get all children with field name "argument"
+    let mut cursor = node.walk();
+    for child in node.children_by_field_name("argument", &mut cursor) {
+        arguments.push(parse_fn_arg(child, source));
     }
 
     Expr::Call {
-        fn_name: fn_name.expect("Rule::fn_name not found"),
+        fn_name,
         arguments,
         is_infix: false,
         span,
     }
 }
 
-fn is_value(rule: Rule) -> bool {
-    matches!(rule, Rule::int | Rule::str | Rule::bool)
-}
-
-fn is_type(rule: Rule) -> bool {
-    matches!(
-        rule,
-        Rule::type_int | Rule::type_str | Rule::type_bool | Rule::type_list
-    )
-}
-
-fn parse_value(pair: Pair<Rule>) -> Value {
-    match pair.as_rule() {
-        Rule::int => Value::Int(pair.as_str().parse().expect("int parse error")),
-        Rule::str => Value::Str(snailquote::unescape(pair.as_str()).expect("str parse error")),
-        Rule::bool => Value::Bool(pair.as_str().parse().expect("bool parse error")),
-        _ => unreachable!("unknown rule type: {:?}", pair.as_rule()),
+fn parse_fn_arg(node: Node, source: &[u8]) -> Expr {
+    match node.kind() {
+        "value" | "int" | "str" | "bool" => {
+            let span = Span::from_node(&node);
+            Expr::Value(parse_value(node, source), span)
+        }
+        "unquoted_str_arg" => {
+            let span = Span::from_node(&node);
+            Expr::Value(Value::Str(node_text(&node, source).to_string()), span)
+        }
+        "variable" => parse_variable(node, source),
+        "list" => parse_list(node, source),
+        _ => parse_expr(node, source),
     }
 }
 
-fn parse_expr(pair: Pair<Rule>) -> Expr {
-    let pratt = PrattParser::new()
-        .op(Op::infix(Rule::or, Assoc::Left))
-        .op(Op::infix(Rule::and, Assoc::Left))
-        .op(Op::infix(Rule::comparison_infix_op, Assoc::Left))
-        .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
-        .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
-        .op(Op::infix(Rule::infix_op, Assoc::Left))
-        .op(Op::infix(Rule::pow, Assoc::Right))
-        .op(Op::prefix(Rule::prefix_op));
+fn parse_value(node: Node, source: &[u8]) -> Value {
+    // For composite value nodes, get the actual value child
+    let value_node = if node.kind() == "value" {
+        node.named_child(0).expect("value node must have a child")
+    } else {
+        node
+    };
 
-    pratt
-        .map_primary(|primary| {
-            let span = Span::from_pest(primary.as_span());
-            match primary.as_rule() {
-                Rule::fn_call => parse_call(primary),
-                Rule::expr => parse_expr(primary),
-                Rule::if_expr => parse_if(primary),
-                x if is_value(x) => Expr::Value(parse_value(primary), span),
-                Rule::variable => Expr::Variable(primary.as_str()[1..].to_string(), span),
-                Rule::list => {
-                    let elements: Vec<Expr> = primary
-                        .into_inner()
-                        .map(|pair| match pair.as_rule() {
-                            Rule::expr => parse_expr(pair),
-                            _ => unreachable!(),
-                        })
-                        .collect();
-                    Expr::List { elements, span }
-                }
-                _ => unreachable!("unknown rule type: {:?}", primary.as_rule()),
-            }
-        })
-        .map_prefix(|op, rhs| {
-            let span = Span::from_pest(op.as_span());
+    match value_node.kind() {
+        "int" => Value::Int(
+            node_text(&value_node, source)
+                .parse()
+                .expect("int parse error"),
+        ),
+        "str" => {
+            let text = node_text(&value_node, source);
+            Value::Str(snailquote::unescape(text).expect("str parse error"))
+        }
+        "bool" => Value::Bool(
+            node_text(&value_node, source)
+                .parse()
+                .expect("bool parse error"),
+        ),
+        _ => unreachable!("unknown value type: {}", value_node.kind()),
+    }
+}
+
+fn parse_variable(node: Node, source: &[u8]) -> Expr {
+    let span = Span::from_node(&node);
+    let text = node_text(&node, source);
+    // Variable text includes the $, so skip it
+    let var_name = text[1..].to_string();
+    Expr::Variable(var_name, span)
+}
+
+fn parse_list(node: Node, source: &[u8]) -> Expr {
+    let span = Span::from_node(&node);
+    let elements: Vec<Expr> = named_children(&node)
+        .into_iter()
+        .filter(|child| child.kind() != ";" && child.kind() != "[" && child.kind() != "]")
+        .map(|child| parse_expr(child, source))
+        .collect();
+    Expr::List { elements, span }
+}
+
+fn parse_expr(node: Node, source: &[u8]) -> Expr {
+    match node.kind() {
+        // Primary expressions
+        "int" | "str" | "bool" => {
+            let span = Span::from_node(&node);
+            Expr::Value(parse_value(node, source), span)
+        }
+        "value" => {
+            let span = Span::from_node(&node);
+            Expr::Value(parse_value(node, source), span)
+        }
+        "variable" => parse_variable(node, source),
+        "fn_call" => parse_call(node, source),
+        "list" => parse_list(node, source),
+        "if_expr" => parse_if(node, source),
+
+        // Binary expressions
+        "binary_expr" => {
+            let span = Span::from_node(&node);
+            let left = child_by_field(&node, "left").expect("binary_expr must have left");
+            let right = child_by_field(&node, "right").expect("binary_expr must have right");
+            let operator =
+                child_by_field(&node, "operator").expect("binary_expr must have operator");
+
+            let fn_name = if operator.kind() == "custom_infix_op" {
+                // Custom infix operator like `foo` - extract the token between backticks
+                let op_text = node_text(&operator, source);
+                op_text[1..op_text.len() - 1].to_string()
+            } else {
+                node_text(&operator, source).to_string()
+            };
+
             Expr::Call {
-                fn_name: op.as_str().to_string(),
-                arguments: vec![rhs],
-                is_infix: false,
-                span,
-            }
-        })
-        .map_infix(|lhs, op, rhs| {
-            let span = Span::from_pest(op.as_span());
-            Expr::Call {
-                fn_name: op.as_str().to_string(),
-                arguments: vec![lhs, rhs],
+                fn_name,
+                arguments: vec![parse_expr(left, source), parse_expr(right, source)],
                 is_infix: true,
                 span,
             }
-        })
-        .parse(pair.into_inner())
+        }
+
+        // Prefix expressions
+        "prefix_expr" => {
+            let span = Span::from_node(&node);
+            let operator =
+                child_by_field(&node, "operator").expect("prefix_expr must have operator");
+            let operand = child_by_field(&node, "operand").expect("prefix_expr must have operand");
+
+            Expr::Call {
+                fn_name: node_text(&operator, source).to_string(),
+                arguments: vec![parse_expr(operand, source)],
+                is_infix: false,
+                span,
+            }
+        }
+
+        // Handle unquoted string arguments (which can appear as expressions in some contexts)
+        "unquoted_str_arg" => {
+            let span = Span::from_node(&node);
+            Expr::Value(Value::Str(node_text(&node, source).to_string()), span)
+        }
+
+        // Fallthrough for other expression types
+        _ => {
+            // Try to get the first named child for wrapper nodes
+            if let Some(child) = node.named_child(0) {
+                parse_expr(child, source)
+            } else {
+                unreachable!("unknown expression type: {}", node.kind())
+            }
+        }
+    }
 }
 
 #[derive(Default, Debug, PartialEq, Eq)]
@@ -286,31 +356,33 @@ pub struct ParamSpec {
     pub default_value: Option<Value>,
 }
 
-fn parse_param_spec(pair: Pair<Rule>) -> ParamSpec {
+fn parse_param_spec(node: Node, source: &[u8]) -> ParamSpec {
     let mut is_option = false;
     let mut short = None;
-    let default_value;
 
-    let inner: Vec<Pair<Rule>> = pair.into_inner().collect();
-    match &inner[..] {
-        [raw_default_value, params @ ..] => {
-            default_value = Some(parse_value(raw_default_value.clone()));
-            for param in params {
-                let param_inner: Vec<Pair<Rule>> = param.clone().into_inner().collect();
-                match &param_inner[..] {
-                    [token, value] => match token.as_str() {
-                        "short" => short = Some(value.as_str().chars().nth(1).unwrap()),
-                        _ => unreachable!(),
-                    },
-                    [token] => match token.as_str() {
-                        "option" => is_option = true,
-                        _ => unreachable!(),
-                    },
-                    _ => unreachable!(),
+    let default_value_node =
+        child_by_field(&node, "default_value").expect("param_spec must have default_value");
+    let default_value = Some(parse_value(default_value_node, source));
+
+    // Parse param_option children
+    for child in named_children(&node) {
+        if child.kind() == "param_option" {
+            let option_name = child_by_field(&child, "option_name")
+                .map(|n| node_text(&n, source))
+                .expect("param_option must have option_name");
+
+            match option_name {
+                "option" => is_option = true,
+                "short" => {
+                    if let Some(value_node) = child_by_field(&child, "option_value") {
+                        let value_text = node_text(&value_node, source);
+                        // Value is a quoted char like 'x', so extract the char at position 1
+                        short = Some(value_text.chars().nth(1).unwrap());
+                    }
                 }
+                _ => {}
             }
         }
-        _ => unreachable!(),
     }
 
     ParamSpec {
@@ -320,46 +392,26 @@ fn parse_param_spec(pair: Pair<Rule>) -> ParamSpec {
     }
 }
 
-fn parse_fn_definition(pair: Pair<Rule>) -> Result<FnDefinition> {
-    let mut is_public = false;
-    let mut is_infix = false;
-    let mut fn_name: Option<String> = None;
-    let mut parameters: Vec<Parameter> = vec![];
-    let mut expr: Option<Expr> = None;
-    let mut return_type: Type = Type::Any;
+fn parse_fn_definition(node: Node, source: &[u8]) -> Result<FnDefinition> {
+    let is_public = child_by_field(&node, "public").is_some();
+    let is_infix = child_by_field(&node, "infix").is_some();
 
-    for pair in pair.into_inner() {
-        match pair.as_rule() {
-            Rule::public => is_public = true,
-            Rule::infix => is_infix = true,
-            Rule::fn_name => fn_name = Some(pair.as_str().to_string()),
-            Rule::parameter => {
-                let inner: Vec<Pair<Rule>> = pair.into_inner().collect();
-                let parameter = match &inner[..] {
-                    [var_name, typ, spec] => Parameter {
-                        name: var_name.as_str()[1..].to_string(),
-                        typ: parse_type(typ.clone()),
-                        spec: parse_param_spec(spec.clone()),
-                    },
-                    [var_name, typ] => Parameter {
-                        name: var_name.as_str()[1..].to_string(),
-                        typ: parse_type(typ.clone()),
-                        spec: ParamSpec::default(),
-                    },
-                    [var_name] => Parameter {
-                        name: var_name.as_str()[1..].to_string(),
-                        // default to string
-                        typ: Type::Str,
-                        spec: ParamSpec::default(),
-                    },
-                    _ => unreachable!(),
-                };
-                parameters.push(parameter)
-            }
-            x if is_type(x) => return_type = parse_type(pair),
-            Rule::expr => expr = Some(parse_expr(pair)),
-            _ => unreachable!(),
-        };
+    let fn_name = child_by_field(&node, "name")
+        .map(|n| node_text(&n, source).to_string())
+        .expect("fn_definition must have name field");
+
+    let return_type = child_by_field(&node, "return_type")
+        .map(|n| parse_type(n, source))
+        .unwrap_or(Type::Any);
+
+    let body = child_by_field(&node, "body").expect("fn_definition must have body");
+    let expr = parse_expr(body, source);
+
+    // Parse parameters - they're individual field nodes, not a single container
+    let mut parameters: Vec<Parameter> = Vec::new();
+    let mut cursor = node.walk();
+    for param_node in node.children_by_field_name("parameters", &mut cursor) {
+        parameters.push(parse_parameter(param_node, source)?);
     }
 
     // Validate parameter ordering: required parameters cannot come after optional ones
@@ -390,70 +442,108 @@ fn parse_fn_definition(pair: Pair<Rule>) -> Result<FnDefinition> {
         signature: FnSignature {
             is_public,
             is_infix,
-            fn_name: fn_name.expect("Rule::fn_name not found while parsing function"),
+            fn_name,
             parameters,
             return_type,
         },
-        expr: expr.expect("Rule::expr not found while parsing function"),
+        expr,
     })
 }
 
-fn parse_program(pair: Pair<Rule>) -> Result<ProgramAST> {
-    let mut fn_definitions: Vec<FnDefinition> = vec![];
-    let pairs = pair.into_inner();
+fn parse_parameter(node: Node, source: &[u8]) -> Result<Parameter> {
+    let var_node = child_by_field(&node, "name").expect("parameter must have name");
+    let var_text = node_text(&var_node, source);
+    // Variable includes $, so skip it
+    let name = var_text[1..].to_string();
 
-    for pair in pairs {
-        match pair.as_rule() {
-            Rule::fn_definition => fn_definitions.push(parse_fn_definition(pair)?),
-            Rule::EOI => (),
-            _ => unreachable!(),
+    let typ = child_by_field(&node, "type")
+        .map(|n| parse_type(n, source))
+        .unwrap_or(Type::Str); // default to string
+
+    let spec = child_by_field(&node, "spec")
+        .map(|n| parse_param_spec(n, source))
+        .unwrap_or_default();
+
+    Ok(Parameter { name, typ, spec })
+}
+
+fn parse_program(node: Node, source: &[u8]) -> Result<ProgramAST> {
+    let mut fn_definitions: Vec<FnDefinition> = vec![];
+
+    for child in named_children(&node) {
+        if child.kind() == "fn_definition" {
+            fn_definitions.push(parse_fn_definition(child, source)?);
         }
     }
 
     Ok(ProgramAST { fn_definitions })
 }
 
-pub fn parse_script(text: &str) -> Result<ProgramAST> {
-    let mut pairs = ShadyParser::parse(Rule::program, text).map_err(|e| {
-        // Extract span from Pest error
-        let span = match e.location {
-            pest::error::InputLocation::Pos(pos) => SourceSpan::from(pos..pos + 1),
-            pest::error::InputLocation::Span((start, end)) => SourceSpan::from(start..end),
-        };
+/// Recursively find the first ERROR or MISSING node in the parse tree
+fn find_error_node<'a>(node: Node<'a>) -> Option<Node<'a>> {
+    if node.kind() == "ERROR" || node.is_missing() {
+        return Some(node);
+    }
 
-        // Extract the error variant message
-        let message = match &e.variant {
-            pest::error::ErrorVariant::ParsingError {
-                positives,
-                negatives,
-            } => {
-                let mut msg = String::from("unexpected token");
-                if !positives.is_empty() {
-                    msg.push_str(&format!(", expected: {:?}", positives));
-                }
-                if !negatives.is_empty() {
-                    msg.push_str(&format!(", but found: {:?}", negatives));
-                }
-                msg
+    // Recursively check children using cursor
+    let mut cursor = node.walk();
+    if cursor.goto_first_child() {
+        loop {
+            let child_node = cursor.node();
+            if let Some(error_node) = find_error_node(child_node) {
+                return Some(error_node);
             }
-            pest::error::ErrorVariant::CustomError { message } => message.clone(),
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+
+    None
+}
+
+pub fn parse_script(text: &str) -> Result<ProgramAST> {
+    let mut parser = TSParser::new();
+    parser
+        .set_language(parser::language())
+        .map_err(|e| ShadyError::ParseErrorSimple {
+            message: format!("Failed to set tree-sitter language: {}", e),
+            span: SourceSpan::from(0..0),
+        })?;
+
+    let tree = parser
+        .parse(text, None)
+        .ok_or_else(|| ShadyError::ParseErrorSimple {
+            message: "Failed to parse script".to_string(),
+            span: SourceSpan::from(0..0),
+        })?;
+
+    let root_node = tree.root_node();
+
+    // Check for parse errors
+    if root_node.has_error() {
+        // Find the first ERROR node to get a more specific error location
+        let error_node = find_error_node(root_node);
+        let span = if let Some(err_node) = error_node {
+            SourceSpan::from(err_node.start_byte()..err_node.end_byte())
+        } else {
+            SourceSpan::from(root_node.start_byte()..root_node.end_byte())
         };
 
-        ShadyError::ParseErrorSimple { message, span }
-    })?;
-    let pair = pairs.next().ok_or_else(|| ShadyError::ParseErrorSimple {
-        message: "no pairs returned by parser".to_string(),
-        span: SourceSpan::from(0..0),
-    })?;
-
-    if pair.as_rule() != Rule::program {
         return Err(ShadyError::ParseErrorSimple {
-            message: format!("expected program rule, got {:?}", pair.as_rule()),
+            message: "Syntax error in script".to_string(),
+            span,
+        });
+    }
+
+    if root_node.kind() != "program" {
+        return Err(ShadyError::ParseErrorSimple {
+            message: format!("expected program node, got {}", root_node.kind()),
             span: SourceSpan::from(0..0),
         });
     }
 
-    parse_program(pair)
+    parse_program(root_node, text.as_bytes())
 }
 
 pub fn get_fn_by_name<'a>(program: &'a ProgramAST, fn_name: &str) -> Option<&'a FnDefinition> {

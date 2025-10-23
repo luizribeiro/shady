@@ -78,6 +78,28 @@ fn pipe_stdout_reversed(a: Proc, b: Proc) -> Result<Proc> {
     pipe_stdout(b, a)
 }
 
+#[builtin(">", infix = true)]
+fn pipe_string_to_proc(input: String, mut proc: Proc) -> Result<String> {
+    // Write input to stdin and close it
+    proc.stdin_writer
+        .write_all(input.as_bytes())
+        .map_err(|e| ShadyError::IoError(format!("failed to write to stdin: {}", e)))?;
+    drop(proc.stdin_writer); // Close stdin to signal EOF
+
+    // Redirect stderr in background
+    let stderr_thread = redirect(proc.stderr_reader, io::stderr());
+
+    // Read stdout
+    let mut output = String::new();
+    proc.stdout_reader
+        .read_to_string(&mut output)
+        .map_err(|e| ShadyError::IoError(format!("failed to read stdout: {}", e)))?;
+
+    stderr_thread.join().map_err(|_| ShadyError::ThreadPanic)?;
+
+    Ok(output)
+}
+
 fn redirect<R, W>(mut a: R, mut b: W) -> thread::JoinHandle<()>
 where
     R: Read + Send + 'static,
