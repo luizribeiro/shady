@@ -5,6 +5,7 @@ pub mod builtins;
 pub mod cli;
 pub mod error;
 pub mod eval;
+pub mod formatter;
 pub mod typecheck;
 pub mod types;
 

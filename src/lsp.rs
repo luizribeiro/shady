@@ -267,6 +267,7 @@ impl LanguageServer for Backend {
                     retrigger_characters: None,
                     work_done_progress_options: WorkDoneProgressOptions::default(),
                 }),
+                document_formatting_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -506,6 +507,34 @@ impl LanguageServer for Backend {
         }
 
         Ok(None)
+    }
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+        let uri = &params.text_document.uri;
+
+        let docs = self.documents.read().await;
+        let doc = match docs.get(uri) {
+            Some(doc) => doc,
+            None => return Ok(None),
+        };
+
+        // Format the document
+        let formatted = crate::formatter::format_script(&doc.parse_result.source, &doc.parse_result);
+
+        // Create a text edit that replaces the entire document
+        let line_count = doc.parse_result.source.lines().count();
+        let last_line = doc.parse_result.source.lines().last().unwrap_or("");
+        let last_char = last_line.len();
+
+        let edit = TextEdit {
+            range: Range::new(
+                Position::new(0, 0),
+                Position::new(line_count as u32, last_char as u32),
+            ),
+            new_text: formatted,
+        };
+
+        Ok(Some(vec![edit]))
     }
 }
 
