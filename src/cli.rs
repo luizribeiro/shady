@@ -20,7 +20,16 @@ fn string_to_static_str(s: String) -> &'static str {
 }
 
 fn get_command(context: &ShadyContext) -> clap::Command {
-    let mut cmd = command!().bin_name(format!("shady {}", context.filename));
+    let mut cmd = command!()
+        .bin_name(format!("shady {}", context.filename))
+        .args_conflicts_with_subcommands(true);
+
+    // Find the main function if it exists
+    let main_fn = context
+        .program
+        .fn_definitions
+        .iter()
+        .find(|f| f.signature.is_public && f.signature.fn_name == "main");
 
     for fun in &context.program.fn_definitions {
         let signature = &fun.signature;
@@ -52,10 +61,22 @@ fn get_command(context: &ShadyContext) -> clap::Command {
                     arg = arg.short(short);
                 }
             }
+
+            // If this is the main function, also add its args to the top-level command
+            if signature.fn_name == "main" {
+                cmd = cmd.arg(arg.clone());
+            }
+
             subcmd = subcmd.arg(arg);
         }
         cmd = cmd.subcommand(subcmd);
     }
+
+    // If there's a main function, allow calling without subcommand
+    if main_fn.is_some() {
+        cmd = cmd.subcommand_required(false);
+    }
+
     cmd
 }
 
@@ -71,17 +92,31 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
             span: SourceSpan::from(0..0),
         }
     })?;
-    if let Some(args) = matches.subcommand_matches(subcmd_name) {
-        for param in &fun.signature.parameters {
-            let raw_values = args
-                .get_raw(&param.name)
-                .ok_or_else(|| crate::error::ShadyError::MissingCliArgument(param.name.clone()))?;
 
-            for raw_cli_value in raw_values {
-                let cli_value: String = raw_cli_value.to_string_lossy().into_owned();
-                let value = from_string(&param.typ, &cli_value)?;
-                vars.insert(param.name.clone(), value);
-            }
+    // Determine which matches object to use for extracting arguments
+    let args = if let Some(subcommand_args) = matches.subcommand_matches(subcmd_name) {
+        // Explicit subcommand was used (e.g., "./script.shady main value")
+        subcommand_args
+    } else if subcmd_name == "main" {
+        // No subcommand given, use top-level matches for main (e.g., "./script.shady value")
+        &matches
+    } else {
+        // No subcommand and it's not main - this shouldn't happen
+        return Err(crate::error::ShadyError::FunctionNotFound {
+            name: subcmd_name.to_string(),
+            span: SourceSpan::from(0..0),
+        });
+    };
+
+    for param in &fun.signature.parameters {
+        let raw_values = args
+            .get_raw(&param.name)
+            .ok_or_else(|| crate::error::ShadyError::MissingCliArgument(param.name.clone()))?;
+
+        for raw_cli_value in raw_values {
+            let cli_value: String = raw_cli_value.to_string_lossy().into_owned();
+            let value = from_string(&param.typ, &cli_value)?;
+            vars.insert(param.name.clone(), value);
         }
     }
 
