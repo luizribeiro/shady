@@ -264,6 +264,28 @@ pub fn eval_builtin(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     }
 
+    // Generate parameter extraction code
+    let mut param_extractions = quote! {};
+    let mut param_names = Vec::new();
+    for (i, spec) in param_specs.iter().enumerate() {
+        let param_ident = syn::Ident::new(&format!("arg{}", i), orig_fun_ident.span());
+        param_names.push(param_ident.clone());
+
+        // If this is a lambda parameter, extract it; otherwise just reference the Value
+        if spec.trim().starts_with("fn(") {
+            param_extractions.extend(quote! {
+                let #param_ident = match &args[#i] {
+                    crate::types::Value::Lambda(l) => l,
+                    _ => unreachable!("Lambda validation should have been done"),
+                };
+            });
+        } else {
+            param_extractions.extend(quote! {
+                let #param_ident = &args[#i];
+            });
+        }
+    }
+
     quote! {
         #orig_fun
 
@@ -286,8 +308,11 @@ pub fn eval_builtin(args: TokenStream, input: TokenStream) -> TokenStream {
 
             #lambda_validations
 
+            // Extract parameters
+            #param_extractions
+
             // Call the actual implementation
-            #orig_fun_ident(args, local_context, context)
+            #orig_fun_ident(#(#param_names,)* local_context, context)
         }
 
         #[allow(clippy::mutable_key_type)]

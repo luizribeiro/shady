@@ -4,24 +4,19 @@
 
 use crate::error::{Result, ShadyError};
 use crate::eval::{eval_expr_with_type, LocalContext, ShadyContext};
-use crate::types::{Type, Value};
+use crate::types::{Lambda, Type, Value};
 use shady_macros::eval_builtin;
 
 /// Implements map: applies a lambda to each element of a list
 /// map $fn: fn(T) -> R $list: [T] -> [R]
 #[eval_builtin("map", "fn(any)->any, [any]", "[any]")]
 pub fn map_impl(
-    args: Vec<Value>,
+    lambda: &Lambda,
+    list: &Value,
     local_context: &LocalContext,
     context: &ShadyContext,
 ) -> Result<Value> {
-    // Argument validation is handled by the macro-generated wrapper
-    let lambda = match &args[0] {
-        Value::Lambda(l) => l,
-        _ => unreachable!("Lambda validation should have been done by wrapper"),
-    };
-
-    let (_inner_type, values) = match &args[1] {
+    let (_inner_type, values) = match list {
         Value::List { inner_type, values } => (inner_type, values),
         _ => unreachable!("Type validation should have been done by eval"),
     };
@@ -69,17 +64,12 @@ pub fn map_impl(
 /// filter $fn: fn(T) -> bool $list: [T] -> [T]
 #[eval_builtin("filter", "fn(any)->bool, [any]", "[any]")]
 pub fn filter_impl(
-    args: Vec<Value>,
+    lambda: &Lambda,
+    list: &Value,
     local_context: &LocalContext,
     context: &ShadyContext,
 ) -> Result<Value> {
-    // Argument validation is handled by the macro-generated wrapper
-    let lambda = match &args[0] {
-        Value::Lambda(l) => l,
-        _ => unreachable!("Lambda validation should have been done by wrapper"),
-    };
-
-    let (inner_type, values) = match &args[1] {
+    let (inner_type, values) = match list {
         Value::List { inner_type, values } => (inner_type, values),
         _ => unreachable!("Type validation should have been done by eval"),
     };
@@ -125,19 +115,15 @@ pub fn filter_impl(
 /// reduce $fn: fn(Acc, T) -> Acc $init: Acc $list: [T] -> Acc
 #[eval_builtin("reduce", "fn(any,any)->any, any, [any]", "any")]
 pub fn reduce_impl(
-    args: Vec<Value>,
+    lambda: &Lambda,
+    init: &Value,
+    list: &Value,
     local_context: &LocalContext,
     context: &ShadyContext,
 ) -> Result<Value> {
-    // Argument validation is handled by the macro-generated wrapper
-    let lambda = match &args[0] {
-        Value::Lambda(l) => l,
-        _ => unreachable!("Lambda validation should have been done by wrapper"),
-    };
+    let mut accumulator = init.clone();
 
-    let mut accumulator = args[1].clone();
-
-    let values = match &args[2] {
+    let values = match list {
         Value::List { values, .. } => values,
         _ => unreachable!("Type validation should have been done by eval"),
     };
