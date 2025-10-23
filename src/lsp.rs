@@ -654,18 +654,58 @@ fn get_builtin_signature(fn_name: &str) -> Option<SignatureInformation> {
 }
 
 /// Find the function definition that contains a given byte offset
+///
+/// This uses a line-based heuristic that works better with incomplete code.
+/// For incomplete code (missing closing delimiters), tree-sitter's expression
+/// spans may not extend to where the user is typing, so we check if the cursor
+/// is on any line between the function definition and the next function (or EOF).
 fn find_function_at_position<'a>(
     ast: &'a crate::ast::ProgramAST,
     text: &str,
     position: Position,
 ) -> Option<&'a crate::ast::FnDefinition> {
-    let offset = position_to_offset(text, position);
+    if ast.fn_definitions.is_empty() {
+        return None;
+    }
 
-    ast.fn_definitions.iter().find(|fn_def| {
-        // Check if offset is within the function's expression span
-        let fn_span = fn_def.expr.span();
-        offset >= fn_span.offset && offset < fn_span.offset + fn_span.length
-    })
+    // Build a map of function definitions to their starting line numbers
+    let fn_lines: Vec<(u32, &crate::ast::FnDefinition)> = ast
+        .fn_definitions
+        .iter()
+        .map(|fn_def| {
+            // Find the line where this function definition starts
+            // We do this by searching for the function name in the text
+            let fn_name = &fn_def.signature.fn_name;
+            for (line_num, line) in text.lines().enumerate() {
+                // Check if this line contains the function definition
+                // (has the function name followed by = on the same line)
+                if line.contains(fn_name) && line.contains('=') {
+                    return (line_num as u32, fn_def);
+                }
+            }
+            // Fallback: use the expression span's start position
+            let start_offset = fn_def.expr.span().offset;
+            let start_pos = offset_to_position(text, start_offset);
+            (start_pos.line, fn_def)
+        })
+        .collect();
+
+    // Find the function whose range contains the current position
+    for (i, (start_line, fn_def)) in fn_lines.iter().enumerate() {
+        // Determine the end line (either the next function's start or EOF)
+        let end_line = if i + 1 < fn_lines.len() {
+            fn_lines[i + 1].0
+        } else {
+            text.lines().count() as u32
+        };
+
+        // Check if cursor is within this function's line range
+        if position.line >= *start_line && position.line < end_line {
+            return Some(fn_def);
+        }
+    }
+
+    None
 }
 
 /// Check if the user is trying to complete a variable (typing after '$')
