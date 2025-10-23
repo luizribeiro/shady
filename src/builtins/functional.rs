@@ -16,40 +16,16 @@ pub fn map_impl(
     local_context: &LocalContext,
     context: &ShadyContext,
 ) -> Result<Value> {
-    if arg_exprs.len() != 2 {
-        return Err(ShadyError::EvalError(format!(
-            "map requires exactly 2 arguments, got {}",
-            arg_exprs.len()
-        )));
-    }
-
+    // Argument validation is handled by the macro-generated wrapper
     let lambda_expr = &arg_exprs[0];
     let list_expr = &arg_exprs[1];
 
-    // Evaluate the lambda
+    // Re-evaluate the lambda (already validated by wrapper)
     let lambda_val = eval_expr_with_type(local_context, context, lambda_expr, None)?;
     let lambda = match lambda_val {
         Value::Lambda(l) => l,
-        _ => {
-            return Err(ShadyError::TypeMismatch {
-                expected: "lambda function".to_string(),
-                actual: format!("{}", lambda_val.get_type()),
-                span: lambda_expr.span().to_source_span(),
-            })
-        }
+        _ => unreachable!("Lambda validation should have been done by wrapper"),
     };
-
-    // Check that lambda takes exactly one parameter
-    if lambda.parameters.len() != 1 {
-        return Err(ShadyError::FunctionSignatureMismatch {
-            name: "map".to_string(),
-            arg_types: format!(
-                "map requires a lambda with 1 parameter, got {}",
-                lambda.parameters.len()
-            ),
-            span: lambda_expr.span().to_source_span(),
-        });
-    }
 
     // Evaluate the list
     let list_val = eval_expr_with_type(local_context, context, list_expr, None)?;
@@ -111,49 +87,16 @@ pub fn filter_impl(
     local_context: &LocalContext,
     context: &ShadyContext,
 ) -> Result<Value> {
-    if arg_exprs.len() != 2 {
-        return Err(ShadyError::EvalError(format!(
-            "filter requires exactly 2 arguments, got {}",
-            arg_exprs.len()
-        )));
-    }
-
+    // Argument validation is handled by the macro-generated wrapper
     let lambda_expr = &arg_exprs[0];
     let list_expr = &arg_exprs[1];
 
-    // Evaluate the lambda
+    // Re-evaluate the lambda (already validated by wrapper)
     let lambda_val = eval_expr_with_type(local_context, context, lambda_expr, None)?;
     let lambda = match lambda_val {
         Value::Lambda(l) => l,
-        _ => {
-            return Err(ShadyError::TypeMismatch {
-                expected: "lambda function".to_string(),
-                actual: format!("{}", lambda_val.get_type()),
-                span: lambda_expr.span().to_source_span(),
-            })
-        }
+        _ => unreachable!("Lambda validation should have been done by wrapper"),
     };
-
-    // Check that lambda takes exactly one parameter
-    if lambda.parameters.len() != 1 {
-        return Err(ShadyError::FunctionSignatureMismatch {
-            name: "filter".to_string(),
-            arg_types: format!(
-                "filter requires a lambda with 1 parameter, got {}",
-                lambda.parameters.len()
-            ),
-            span: lambda_expr.span().to_source_span(),
-        });
-    }
-
-    // Check that lambda returns bool
-    if lambda.return_type != Type::Bool && lambda.return_type != Type::Any {
-        return Err(ShadyError::TypeMismatch {
-            expected: "bool".to_string(),
-            actual: format!("{}", lambda.return_type),
-            span: lambda_expr.span().to_source_span(),
-        });
-    }
 
     // Evaluate the list
     let list_val = eval_expr_with_type(local_context, context, list_expr, None)?;
@@ -213,41 +156,17 @@ pub fn reduce_impl(
     local_context: &LocalContext,
     context: &ShadyContext,
 ) -> Result<Value> {
-    if arg_exprs.len() != 3 {
-        return Err(ShadyError::EvalError(format!(
-            "reduce requires exactly 3 arguments, got {}",
-            arg_exprs.len()
-        )));
-    }
-
+    // Argument validation is handled by the macro-generated wrapper
     let lambda_expr = &arg_exprs[0];
     let init_expr = &arg_exprs[1];
     let list_expr = &arg_exprs[2];
 
-    // Evaluate the lambda
+    // Re-evaluate the lambda (already validated by wrapper)
     let lambda_val = eval_expr_with_type(local_context, context, lambda_expr, None)?;
     let lambda = match lambda_val {
         Value::Lambda(l) => l,
-        _ => {
-            return Err(ShadyError::TypeMismatch {
-                expected: "lambda function".to_string(),
-                actual: format!("{}", lambda_val.get_type()),
-                span: lambda_expr.span().to_source_span(),
-            })
-        }
+        _ => unreachable!("Lambda validation should have been done by wrapper"),
     };
-
-    // Check that lambda takes exactly two parameters (accumulator, element)
-    if lambda.parameters.len() != 2 {
-        return Err(ShadyError::FunctionSignatureMismatch {
-            name: "reduce".to_string(),
-            arg_types: format!(
-                "reduce requires a lambda with 2 parameters (accumulator, element), got {}",
-                lambda.parameters.len()
-            ),
-            span: lambda_expr.span().to_source_span(),
-        });
-    }
 
     // Evaluate the initial value
     let mut accumulator = eval_expr_with_type(local_context, context, init_expr, None)?;

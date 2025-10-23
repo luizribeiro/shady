@@ -233,7 +233,8 @@ pub fn eval_builtin(args: TokenStream, input: TokenStream) -> TokenStream {
     let setup_ident = syn::Ident::new(&setup_fname, orig_fun_ident.span());
 
     // Parse parameter specs like "fn(any)->any, [any]"
-    let param_specs: Vec<&str> = param_spec.split(',').map(|s| s.trim()).collect();
+    // Need to be careful with commas inside function types
+    let param_specs = parse_param_specs(&param_spec);
 
     let mut params_prog = quote! {};
     for (i, spec) in param_specs.iter().enumerate() {
@@ -251,8 +252,43 @@ pub fn eval_builtin(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let return_type_code = parse_type_spec(&return_spec);
 
+    // Generate validation wrapper that checks arguments before calling the impl
+    let num_params = param_specs.len();
+    let wrapper_ident = syn::Ident::new(&format!("{}_wrapper", orig_fun_ident), orig_fun_ident.span());
+
+    // Generate lambda validation code for function types
+    let mut lambda_validations = quote! {};
+    for (i, spec) in param_specs.iter().enumerate() {
+        if let Some(validation) = generate_lambda_validation(spec, i, &fn_name) {
+            lambda_validations.extend(validation);
+        }
+    }
+
     quote! {
         #orig_fun
+
+        // Generate a wrapper that validates arguments
+        fn #wrapper_ident(
+            arg_exprs: &[crate::ast::Expr],
+            local_context: &crate::eval::LocalContext,
+            context: &crate::eval::ShadyContext,
+        ) -> crate::error::Result<crate::types::Value> {
+            // Check argument count
+            if arg_exprs.len() != #num_params {
+                return Err(crate::error::ShadyError::EvalError(format!(
+                    "{} requires exactly {} argument{}, got {}",
+                    #fn_name,
+                    #num_params,
+                    if #num_params == 1 { "" } else { "s" },
+                    arg_exprs.len()
+                )));
+            }
+
+            #lambda_validations
+
+            // Call the actual implementation
+            #orig_fun_ident(arg_exprs, local_context, context)
+        }
 
         #[allow(clippy::mutable_key_type)]
         pub fn #setup_ident(builtins: &mut crate::eval::BuiltinIndex) {
@@ -267,11 +303,122 @@ pub fn eval_builtin(args: TokenStream, input: TokenStream) -> TokenStream {
             };
             builtins.insert(
                 signature,
-                crate::eval::Builtin::Eval(Box::new(#orig_fun_ident)),
+                crate::eval::Builtin::Eval(Box::new(#wrapper_ident)),
             );
         }
     }
     .into()
+}
+
+/// Parse parameter specs, being careful about commas inside function types
+/// E.g., "fn(any,any)->any, any, [any]" should split into ["fn(any,any)->any", "any", "[any]"]
+fn parse_param_specs(spec: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0; // Track nesting depth of parentheses/brackets
+
+    for ch in spec.chars() {
+        match ch {
+            '(' | '[' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' | ']' => {
+                depth -= 1;
+                current.push(ch);
+            }
+            ',' if depth == 0 => {
+                // Top-level comma - this separates parameters
+                if !current.trim().is_empty() {
+                    result.push(current.trim().to_string());
+                }
+                current.clear();
+            }
+            _ => {
+                current.push(ch);
+            }
+        }
+    }
+
+    // Don't forget the last parameter
+    if !current.trim().is_empty() {
+        result.push(current.trim().to_string());
+    }
+
+    result
+}
+
+/// Generate validation code for lambda parameters
+/// Returns validation code if the spec is a function type, None otherwise
+fn generate_lambda_validation(spec: &str, arg_index: usize, fn_name: &str) -> Option<proc_macro2::TokenStream> {
+    let spec = spec.trim();
+
+    // Check if this is a function type
+    if !spec.starts_with("fn(") {
+        return None;
+    }
+
+    let arrow_pos = spec.find(")->")?;
+    let params_str = &spec[3..arrow_pos];
+    let return_str = &spec[arrow_pos+3..];
+
+    // Count parameters
+    let expected_param_count = if params_str.is_empty() {
+        0
+    } else {
+        params_str.split(',').count()
+    };
+
+    // Parse return type for validation
+    let return_type_check = if return_str.trim() == "bool" {
+        quote! {
+            // Check that lambda returns bool
+            if lambda.return_type != crate::types::Type::Bool && lambda.return_type != crate::types::Type::Any {
+                return Err(crate::error::ShadyError::TypeMismatch {
+                    expected: "bool".to_string(),
+                    actual: format!("{}", lambda.return_type),
+                    span: arg_exprs[#arg_index].span().to_source_span(),
+                });
+            }
+        }
+    } else {
+        quote! {} // No specific return type validation for other types
+    };
+
+    Some(quote! {
+        // Validate lambda parameter for argument #arg_index
+        {
+            let lambda_expr = &arg_exprs[#arg_index];
+            let lambda_val = crate::eval::eval_expr_with_type(local_context, context, lambda_expr, None)?;
+            let lambda = match lambda_val {
+                crate::types::Value::Lambda(ref l) => l,
+                _ => {
+                    return Err(crate::error::ShadyError::TypeMismatch {
+                        expected: "lambda function".to_string(),
+                        actual: format!("{}", lambda_val.get_type()),
+                        span: lambda_expr.span().to_source_span(),
+                    });
+                }
+            };
+
+            // Check parameter count
+            if lambda.parameters.len() != #expected_param_count {
+                return Err(crate::error::ShadyError::FunctionSignatureMismatch {
+                    name: #fn_name.to_string(),
+                    arg_types: format!(
+                        "{} requires a lambda with {} parameter{}, got {}",
+                        #fn_name,
+                        #expected_param_count,
+                        if #expected_param_count == 1 { "" } else { "s" },
+                        lambda.parameters.len()
+                    ),
+                    span: lambda_expr.span().to_source_span(),
+                });
+            }
+
+            #return_type_check
+        }
+    })
 }
 
 /// Parse a type spec string like "int", "[any]", "fn(any)->bool" into Type code
