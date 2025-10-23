@@ -317,6 +317,29 @@ impl<'a> Formatter<'a> {
     }
 
     fn format_if_expr(&mut self, node: &tree_sitter::Node, is_nested: bool) {
+        // Try formatting as single line first to check length
+        let mut temp_formatter = Formatter::new(
+            std::str::from_utf8(self.source_bytes).unwrap(),
+            self.parse_result,
+            self.config,
+        );
+        temp_formatter.current_indent = self.current_indent;
+        temp_formatter.format_if_expr_single_line(node, is_nested);
+        let single_line = temp_formatter.output;
+
+        // Check if single-line version would exceed max length
+        let would_fit = self.current_line_length() + single_line.len() <= self.config.max_line_length;
+
+        if would_fit {
+            // Use single-line format
+            self.output.push_str(&single_line);
+        } else {
+            // Use multi-line format
+            self.format_if_expr_multiline(node, is_nested);
+        }
+    }
+
+    fn format_if_expr_single_line(&mut self, node: &tree_sitter::Node, is_nested: bool) {
         if is_nested {
             self.output.push('(');
         }
@@ -324,7 +347,6 @@ impl<'a> Formatter<'a> {
         self.output.push_str("if (");
 
         if let Some(condition) = node.child_by_field_name("condition") {
-            // Don't add extra parens - we're already inside if (...)
             self.format_expression(&condition, false);
         }
 
@@ -339,6 +361,43 @@ impl<'a> Formatter<'a> {
         if let Some(when_false) = node.child_by_field_name("when_false") {
             self.format_expression(&when_false, false);
         }
+
+        if is_nested {
+            self.output.push(')');
+        }
+    }
+
+    fn format_if_expr_multiline(&mut self, node: &tree_sitter::Node, is_nested: bool) {
+        if is_nested {
+            self.output.push('(');
+        }
+
+        self.output.push_str("if (");
+
+        if let Some(condition) = node.child_by_field_name("condition") {
+            self.format_expression(&condition, false);
+        }
+
+        self.output.push_str(")\n");
+        self.indent();
+        self.write_indent();
+
+        if let Some(when_true) = node.child_by_field_name("when_true") {
+            self.format_expression(&when_true, false);
+        }
+
+        self.output.push_str("\n");
+        self.dedent();
+        self.write_indent();
+        self.output.push_str("else\n");
+        self.indent();
+        self.write_indent();
+
+        if let Some(when_false) = node.child_by_field_name("when_false") {
+            self.format_expression(&when_false, false);
+        }
+
+        self.dedent();
 
         if is_nested {
             self.output.push(')');

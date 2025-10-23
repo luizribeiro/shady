@@ -95,13 +95,16 @@ public show-result $x: int $y: int = print "{$x} + {$y} = {$x + $y}";
 public deployment-status $version: str $server: str =
   print "Deploying v{$version} to {$server} at {stdout (date)}";
 
-# Boolean expressions
+# Boolean expressions with conditionals
 public check-value $x: int =
-  print ("Value " + to_string $x + " is " + if ($x > 10) "large" else "small");
+  if ($x > 10) print "Value is large" else print "Value is small";
 
-# Mix interpolation with literals
+# Pluralization with conditionals
 public format-list $count: int =
-  print ("Found " + to_string $count + " item" + if ($count == 1) "" else "s");
+  if ($count == 1)
+    print "Found 1 item"
+  else
+    print ("Found " + to_string $count + " items");
 ```
 
 String interpolation makes string building more readable compared to concatenation:
@@ -351,7 +354,10 @@ public backup-to-home $filename: str =
 
 # Environment-aware configuration
 public configure =
-  if (env "ENV" "dev" == "prod") echo "Using production config" else echo "Using development config";
+  if (env "ENV" "dev" == "prod")
+    echo "Using production config"
+  else
+    echo "Using development config";
 ```
 
 ## Real-World Examples

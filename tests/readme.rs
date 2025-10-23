@@ -231,9 +231,8 @@ fn test_readme_code_blocks_are_formatted() {
 #[test]
 fn test_readme_code_blocks_line_length() {
     let blocks = extract_shady_code_blocks();
-    // Allow up to 105 characters for indented lines (70 + 2 indent spaces + some buffer for expressions)
-    // Function signatures should still fit in 70 chars
-    let max_line_length = 105;
+    // Enforce 70 character line length (including indentation)
+    let max_line_length = 70;
     let mut long_line_blocks = Vec::new();
 
     for (line_num, code) in &blocks {
