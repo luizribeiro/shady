@@ -82,7 +82,9 @@ fn get_command(context: &ShadyContext) -> clap::Command {
 
 pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
     let cmd = get_command(context);
-    let matches = cmd.get_matches_from(script_args);
+    let matches = cmd.try_get_matches_from(script_args).map_err(|e| {
+        crate::error::ShadyError::EvalError(e.to_string())
+    })?;
 
     let mut vars = HashMap::new();
     let subcmd_name = matches.subcommand_name().unwrap_or("main");
@@ -124,4 +126,139 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
 
     eval::eval_expr_with_type(&local_context, context, &fun.expr, None)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::parse_script;
+
+    #[test]
+    fn test_main_without_explicit_subcommand() {
+        // Test that main can be called without "main" subcommand
+        let code = "public main $arg: str = echo $arg;";
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("test.shady".to_string(), code.to_string(), ast);
+
+        // Simulate: ./test.shady "value"
+        let args = vec!["./test.shady".to_string(), "hello".to_string()];
+        let result = run_fn(&context, &args);
+
+        assert!(result.is_ok(), "Should succeed with implicit main");
+    }
+
+    #[test]
+    fn test_main_with_explicit_subcommand() {
+        // Test that main can still be called with explicit "main" subcommand
+        let code = "public main $arg: str = echo $arg;";
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("test.shady".to_string(), code.to_string(), ast);
+
+        // Simulate: ./test.shady main "value"
+        let args = vec![
+            "./test.shady".to_string(),
+            "main".to_string(),
+            "hello".to_string(),
+        ];
+        let result = run_fn(&context, &args);
+
+        assert!(result.is_ok(), "Should succeed with explicit main");
+    }
+
+    #[test]
+    fn test_main_missing_required_arg() {
+        // Test that missing required arguments show proper error
+        let code = "public main $arg: str = echo $arg;";
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("test.shady".to_string(), code.to_string(), ast);
+
+        // Simulate: ./test.shady (no arguments)
+        let args = vec!["./test.shady".to_string()];
+        let result = run_fn(&context, &args);
+
+        assert!(
+            result.is_err(),
+            "Should fail when required argument is missing"
+        );
+    }
+
+    #[test]
+    fn test_main_with_default_arg() {
+        // Test that default arguments work without explicit subcommand
+        let code = "public main $arg: str (\"default\") = echo $arg;";
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("test.shady".to_string(), code.to_string(), ast);
+
+        // Simulate: ./test.shady (no arguments, should use default)
+        let args = vec!["./test.shady".to_string()];
+        let result = run_fn(&context, &args);
+
+        assert!(result.is_ok(), "Should succeed with default value");
+    }
+
+    #[test]
+    fn test_non_main_function_requires_subcommand() {
+        // Test that non-main functions still require explicit subcommand
+        let code = "public greet $name: str = echo $name;";
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("test.shady".to_string(), code.to_string(), ast);
+
+        // Simulate: ./test.shady greet "Alice"
+        let args = vec![
+            "./test.shady".to_string(),
+            "greet".to_string(),
+            "Alice".to_string(),
+        ];
+        let result = run_fn(&context, &args);
+
+        assert!(result.is_ok(), "Should succeed with explicit subcommand");
+    }
+
+    #[test]
+    fn test_main_with_multiple_args() {
+        // Test main with multiple parameters
+        let code = "public main $first: str $second: int = echo $first;";
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("test.shady".to_string(), code.to_string(), ast);
+
+        // Simulate: ./test.shady "hello" 42
+        let args = vec![
+            "./test.shady".to_string(),
+            "hello".to_string(),
+            "42".to_string(),
+        ];
+        let result = run_fn(&context, &args);
+
+        assert!(
+            result.is_ok(),
+            "Should succeed with multiple args without subcommand"
+        );
+    }
+
+    #[test]
+    fn test_multiple_functions_with_main() {
+        // Test that having multiple functions doesn't break main's implicit behavior
+        let code = "public main $arg: str = echo $arg;\npublic other $x: int = $x;";
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("test.shady".to_string(), code.to_string(), ast);
+
+        // Simulate: ./test.shady "value" (should call main implicitly)
+        let args = vec!["./test.shady".to_string(), "value".to_string()];
+        let result = run_fn(&context, &args);
+
+        assert!(
+            result.is_ok(),
+            "Should call main implicitly even with other functions present"
+        );
+
+        // Simulate: ./test.shady other 123 (should call other explicitly)
+        let args = vec![
+            "./test.shady".to_string(),
+            "other".to_string(),
+            "123".to_string(),
+        ];
+        let result = run_fn(&context, &args);
+
+        assert!(result.is_ok(), "Should call other function explicitly");
+    }
 }
