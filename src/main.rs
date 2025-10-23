@@ -1,13 +1,5 @@
-mod ast;
-mod builtins;
-mod cli;
-mod error;
-mod eval;
-mod lsp;
-mod parser;
-mod types;
-
 use clap::Parser;
+use shady::{ast, cli, eval};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

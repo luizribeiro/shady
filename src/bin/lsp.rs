@@ -1,22 +1,4 @@
-mod parser {
-    include!("../parser.rs");
-}
-
-mod ast {
-    include!("../ast.rs");
-}
-
-mod error {
-    include!("../error.rs");
-}
-
-mod types {
-    include!("../types.rs");
-}
-
-mod lsp {
-    include!("../lsp.rs");
-}
+use shady::lsp;
 
 #[tokio::main]
 async fn main() {
