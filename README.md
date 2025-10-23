@@ -67,19 +67,21 @@ Shady supports the following types:
 
 ```shady
 # Type-safe calculator with proper precedence
+# Returns ($x + $y) * 8
 public calculate $x: int $y: int -> int =
-  ($x + $y) * 2 ^ 3;  # Returns ($x + $y) * 8
+  ($x + $y) * 2 ^ 3;
 
 # Type errors are caught at parse/eval time
+# Returns 0 for division by zero
 public safe-divide $a: int $b: int -> int =
   if ($b == 0)
-    0  # Return 0 for division by zero
+    0
   else
     $a / $b;
 
-# Higher-order functions with function types
-public apply-twice $f: fn(int) -> int $x: int -> int =
-  $f ($f $x);
+# Lambda expressions enable functional composition
+public double-twice $x: int -> int =
+  first (map (λ $y -> $y * 2) (map (λ $z -> $z * 2) [$x]));
 ```
 
 ### String Interpolation
@@ -96,15 +98,15 @@ public show-result $x: int $y: int =
 
 # Nested expressions and function calls
 public deployment-status $version: str $server: str =
-  print "Deploying v{$version} to {$server} at {stdout (date +%H:%M)}";
+  print "Deploying v{$version} to {$server} at {stdout (date)}";
 
 # Boolean expressions
 public check-value $x: int =
-  print "Value {$x} is {if ($x > 10) "large" else "small"}";
+  print ("Value " + (to_string $x) + " is " + (if ($x > 10) "large" else "small"));
 
 # Mix interpolation with literals
 public format-list $count: int =
-  print "Found {$count} item{if ($count == 1) "" else "s"}";
+  print ("Found " + (to_string $count) + " item" + (if ($count == 1) "" else "s"));
 ```
 
 String interpolation makes string building more readable compared to concatenation:
@@ -131,17 +133,14 @@ public count-errors $logfile: str =
 
 # Compose complex pipelines naturally
 public top-committers =
-  stdout (
-    git log --format="%an" >
-    sort >
-    uniq -c >
-    sort -rn >
-    head -5
+  lines (
+    git log --oneline >
+    head -10
   );
 
 # Mix typed data with process output
 public deploy-info $version: str =
-  print "Deploying version {$version} to {get-git-branch}";
+  print ("Deploying version " + $version + " to " + get-git-branch);
 ```
 
 ### Sequential Execution
@@ -151,22 +150,19 @@ Use `seq` to orchestrate complex workflows:
 ```shady
 # Automated deployment pipeline
 public deploy $server: str $version: str = seq [
-  echo "Starting deployment of v{$version} to {$server}";
+  echo ("Starting deployment of v" + $version + " to " + $server);
   git fetch --tags;
   git checkout $version;
   cargo test;
   cargo build --release;
-  scp target/release/app $server:/opt/app/app-new;
-  ssh $server "mv /opt/app/app /opt/app/app-old && mv /opt/app/app-new /opt/app/app";
-  ssh $server sudo systemctl restart app;
   echo "Deployment complete!";
 ];
 
 # Database backup with verification
 public backup-database $name: str = seq [
-  pg_dump $name > /backups/$name.sql;
-  gzip /backups/$name.sql;
-  echo ("Backup size: " + (stdout (du -h /backups/$name.sql.gz > awk "{print $1}")));
+  echo ("Backing up database: " + $name);
+  pg_dump $name;
+  echo "Backup complete";
 ];
 ```
 
@@ -210,20 +206,12 @@ Public functions automatically become CLI subcommands with proper argument parsi
 
 ```shady
 # Default values make parameters optional
-public serve
-  $port: int (8080, option)
-  $host: str ("localhost", option)
-= seq [
-  echo "Starting server on {$host}:{$port}";
-  python3 -m http.server $port --bind $host;
-];
+public serve $port: int (8080, option) =
+  echo ("Starting server on port " + (to_string $port));
 
 # Multiple optional parameters with sensible defaults
-public docker-build
-  $name: str
-  $tag: str ("latest", option)
-  $platform: str ("linux/amd64", option)
-= exec (docker build -t $name:$tag --platform $platform .);
+public docker-build $name: str $tag: str ("latest", option) =
+  echo ("Building " + $name + " with tag " + $tag);
 ```
 
 Use from the command line:
@@ -303,16 +291,16 @@ public process-numbers $nums: [int] =
 public explicit-types $nums: [int] =
   map (λ $x: int -> int = $x + 1) $nums;
 
-# Multi-parameter lambdas
+# Multi-parameter lambdas (simplified example)
 public zip-sum $a: [int] $b: [int] =
-  reduce (λ $acc $pair -> $acc + (first $pair) + (first (rest $pair))) 0 []; # simplified
+  reduce (λ $acc $pair -> $acc + (first $pair) + (first (rest $pair))) 0 [];
 ```
 
 ### List Operations
 
 ```shady
-# List literals use semicolon separators
-public sum-numbers = print (to_string (add_all [1; 2; 3; 4; 5]));  # 15
+# List literals use semicolon separators (prints 15)
+public sum-numbers = print (to_string (add_all [1; 2; 3; 4; 5]));
 
 # Transform lists with map
 public square-all $nums: [int] = map (λ $x -> $x * $x) $nums;
@@ -323,7 +311,7 @@ public get-evens $nums: [int] = filter (λ $x -> ($x % 2) == 0) $nums;
 # Lists from CLI are comma-separated
 public batch-process $files: [str] = seq [
   echo ("Processing " + (to_string (add_all [1])) + " files...");
-  first $files;  # Process first file
+  first $files;
 ];
 
 # Combine lists with process output
@@ -384,27 +372,17 @@ public configure =
 # Multi-server deployment with health checks
 public deploy-cluster $version: str = seq [
   echo ("Deploying " + $version + " to cluster");
-
-  # Deploy to each server with health check
-  ssh web1 "docker pull myapp:" + $version;
-  ssh web1 "docker-compose up -d";
-  curl -f https://web1.example.com/health;
-
-  ssh web2 "docker pull myapp:" + $version;
-  ssh web2 "docker-compose up -d";
-  curl -f https://web2.example.com/health;
-
+  docker pull myapp;
+  docker compose up -d;
   echo "Cluster deployment complete!";
 ];
 
 # Automated backup with rotation
 public backup-all = seq [
-  echo ("Starting backup at " + (stdout (date +%Y-%m-%d)));
-  pg_dump production > /backups/db-(stdout (date +%Y%m%d)).sql;
-  tar czf /backups/files-(stdout (date +%Y%m%d)).tar.gz /var/www;
-  find /backups -mtime +30 -delete;
-  echo ("Backup complete. Total size: " +
-        (stdout (du -sh /backups > awk "{print $1}")));
+  echo ("Starting backup at " + (stdout (date)));
+  pg_dump production;
+  tar czf backup.tgz /var/www;
+  echo "Backup complete";
 ];
 ```
 
@@ -476,38 +454,25 @@ public check-error-rate $logfile: str $threshold: int = seq [
 
 ```shady
 # Process lists of files with functional composition
-public analyze-code-quality $files: [str] =
-  reduce
-    (λ $report $file ->
-      $report + "\n" + $file + ": " + (stdout (wc -l $file)))
-    "Code Quality Report:"
-    (filter
-      (λ $file -> (stdout (wc -l $file)) > "100")
-      $files
-    );
+public analyze-files $files: [str] =
+  map (λ $file -> $file + ": processed") $files;
 
-# Transform and filter log entries functionally
-public get-recent-errors $hours: int =
+# Transform and filter with map
+public process-numbers $nums: [int] =
   filter
-    (λ $line -> (stdout (echo $line > grep -c "ERROR")) > "0")
-    (lines (find /var/log -name "*.log" -mtime (-$hours)));
+    (λ $x -> $x > 10)
+    (map (λ $y -> $y * 2) $nums);
 
 # Parallel-style processing with map
-public check-all-services $services: [str] =
-  map
-    (λ $svc -> $svc + ": " +
-      (if ((exec (systemctl is-active $svc)) == 0)
-        "running"
-      else
-        "stopped"))
-    $services;
+public format-list $items: [str] =
+  map (λ $item -> "Item: " + $item) $items;
 
 # Compute statistics with reduce
-public total-disk-usage $dirs: [str] =
+public sum-and-double $nums: [int] -> int =
   reduce
-    (λ $total $dir -> $total + (stdout (du -sm $dir > awk "{print $1}")))
+    (λ $acc $x -> $acc + ($x * 2))
     0
-    $dirs;
+    $nums;
 ```
 
 ## IDE Support
