@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use crate::ast;
+use crate::builtins::proc::exec;
 use crate::error::Result;
 use crate::eval;
 use crate::eval::ShadyContext;
-use crate::types::{from_string, Type};
+use crate::types::{from_string, Type, Value};
 
 use clap::{command, value_parser, Arg, Command};
 use miette::SourceSpan;
@@ -82,9 +83,9 @@ fn get_command(context: &ShadyContext) -> clap::Command {
 
 pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
     let cmd = get_command(context);
-    let matches = cmd.try_get_matches_from(script_args).map_err(|e| {
-        crate::error::ShadyError::EvalError(e.to_string())
-    })?;
+    let matches = cmd
+        .try_get_matches_from(script_args)
+        .map_err(|e| crate::error::ShadyError::EvalError(e.to_string()))?;
 
     let mut vars = HashMap::new();
     let subcmd_name = matches.subcommand_name().unwrap_or("main");
@@ -124,7 +125,14 @@ pub fn run_fn(context: &ShadyContext, script_args: &Vec<String>) -> Result<()> {
 
     let local_context = eval::LocalContext { vars, depth: 0 };
 
-    eval::eval_expr_with_type(&local_context, context, &fun.expr, None)?;
+    let result = eval::eval_expr_with_type(&local_context, context, &fun.expr, None)?;
+
+    // Auto-execute Proc return values (Phase 1: Make commands run by default)
+    // This makes `public main $name: str = echo $name` work without explicit exec
+    if let Value::Proc(proc) = result {
+        exec(proc)?;
+    }
+
     Ok(())
 }
 
@@ -260,5 +268,49 @@ mod tests {
         let result = run_fn(&context, &args);
 
         assert!(result.is_ok(), "Should call other function explicitly");
+    }
+
+    // Auto-exec tests (Phase 1)
+    #[test]
+    fn test_auto_exec_single_proc() {
+        // Test that returning a single Proc auto-executes it
+        let code = "public main $msg: str = echo $msg;";
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("test.shady".to_string(), code.to_string(), ast);
+
+        // This should auto-execute the echo command without explicit exec
+        let args = vec!["./test.shady".to_string(), "hello".to_string()];
+        let result = run_fn(&context, &args);
+
+        assert!(result.is_ok(), "Should auto-exec Proc return value");
+    }
+
+    #[test]
+    fn test_auto_exec_with_seq() {
+        // Test that seq still works (it internally calls exec)
+        let code = "public main $msg: str = seq [(echo $msg); (echo $msg)];";
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("test.shady".to_string(), code.to_string(), ast);
+
+        let args = vec!["./test.shady".to_string(), "hello".to_string()];
+        let result = run_fn(&context, &args);
+
+        assert!(result.is_ok(), "Should work with seq");
+    }
+
+    #[test]
+    fn test_non_proc_return_values() {
+        // Test that non-Proc return values still work (int, str, etc.)
+        let code = "public main $x: int = $x + 1;";
+        let ast = parse_script(code).unwrap();
+        let context = eval::build_context("test.shady".to_string(), code.to_string(), ast);
+
+        let args = vec!["./test.shady".to_string(), "42".to_string()];
+        let result = run_fn(&context, &args);
+
+        assert!(
+            result.is_ok(),
+            "Should work with non-Proc return values (no auto-exec needed)"
+        );
     }
 }

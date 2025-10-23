@@ -16,7 +16,7 @@ use crate::builtins::list::*;
 mod os;
 use crate::builtins::os::*;
 
-mod proc;
+pub mod proc;
 use crate::builtins::proc::*;
 
 mod str;

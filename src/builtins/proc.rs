@@ -5,7 +5,7 @@ use std::io::prelude::*;
 use std::{io, thread};
 
 #[builtin]
-fn exec(proc: Proc) -> Result<i64> {
+pub fn exec(proc: Proc) -> Result<i64> {
     let stdin_thread = redirect(io::stdin(), proc.stdin_writer);
     let stdout_thread = redirect(proc.stdout_reader, io::stdout());
     let stderr_thread = redirect(proc.stderr_reader, io::stderr());
