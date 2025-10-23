@@ -1,0 +1,35 @@
+# Deployment automation script with automatic CLI generation
+
+# Deploy to a specific environment
+public deploy $env: str $version: str =
+  seq [
+    echo ("Deploying version " + $version + " to " + $env);
+    git fetch --tags;
+    git checkout $version;
+    cargo build --release;
+    echo "Deployment complete!";
+  ];
+
+# Start a development server with optional port
+public serve $port: int (8080, option) $host: str ("localhost", option) =
+  echo ("Starting server on " + $host + ":" + to_string $port);
+
+# Run database migrations
+public migrate $database: str $direction: str ("up", option) =
+  seq [
+    echo ("Running migrations " + $direction + " on " + $database);
+    echo "Migrations complete";
+  ];
+
+# Backup with optional compression
+public backup $source: str $dest: str $compress: bool (false, option) =
+  if ($compress)
+    seq [
+      echo ("Backing up " + $source + " to " + $dest + " (compressed)");
+      tar czf $dest $source;
+    ]
+  else
+    seq [
+      echo ("Backing up " + $source + " to " + $dest);
+      cp -r $source $dest;
+    ];

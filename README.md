@@ -3,19 +3,43 @@
 [![CI](https://github.com/luizribeiro/shady/actions/workflows/ci.yml/badge.svg)](https://github.com/luizribeiro/shady/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/luizribeiro/shady/branch/main/graph/badge.svg?token=25KwvC0cSi)](https://codecov.io/gh/luizribeiro/shady)
 
-Shady is a typed scripting language designed for system automation and command orchestration. It combines the expressiveness of traditional shell scripts with a robust type system and first-class process management.
+Shady is a **batteries-included** typed scripting language for system automation and command orchestration. It combines the expressiveness of shell scripts with modern language tooling: static type checking, LSP support, and automatic formatting.
+
+```shady
+# Write a deployment script - it becomes a CLI automatically
+public deploy $env: str $version: str =
+  seq [
+    echo ("Deploying " + $version + " to " + $env);
+    git checkout $version;
+    cargo build --release;
+  ];
+
+# Get instant CLI with --help, type checking, and auto-completion
+# $ ./deploy.shady deploy --help
+# $ ./deploy.shady deploy production v1.2.0
+```
 
 ## Why Shady?
 
-Traditional shell scripts are powerful but lack type safety and structured process management. Shady addresses these limitations by providing:
+Traditional shell scripts lack type safety and tooling. Shady is a complete language ecosystem designed for production automation:
 
-- **Type Safety**: Catch errors before runtime with a static type system (int, str, bool, list, proc, functions)
-- **First-Class Processes**: Process handles (`Proc` type) with built-in support for stdin/stdout/stderr redirection
-- **Functional Programming**: Lambda expressions with closures and higher-order functions (map, filter, reduce)
-- **Automatic CLI Generation**: Public functions become CLI subcommands automatically with proper argument parsing
-- **IDE Support**: Built-in LSP server with auto-completion, type checking, and signature help
-- **Clean Syntax**: Readable, structured syntax with string interpolation and functional composition
-- **Seamless External Commands**: Call any external command as if it were a native function
+**Language Features:**
+- **Static Type System**: Catch errors before runtime (int, str, bool, list, proc, functions)
+- **First-Class Processes**: Process handles with stdin/stdout/stderr redirection
+- **Functional Programming**: Lambda expressions, closures, map/filter/reduce
+- **String Interpolation**: Embed expressions directly in strings
+- **Clean Syntax**: Structured, readable code with expression-oriented design
+
+**Development Tools:**
+- **Built-in Type Checker**: Static analysis catches errors before execution
+- **LSP Server**: Auto-completion, go-to-definition, signature help, type checking in any editor
+- **Auto-Formatter**: Consistent code style with configurable line length
+- **Automatic CLI Generation**: Public functions become subcommands with --help documentation
+
+**Seamless Integration:**
+- Call any external command as if it were a native function
+- Process pipelines with type-safe composition
+- Environment variable access with defaults
 
 ## Quick Start
 
@@ -198,31 +222,55 @@ public format-count $count: int =
 
 ### Automatic CLI Generation
 
-Public functions automatically become CLI subcommands with proper argument parsing:
+Every public function becomes a CLI subcommand with automatic argument parsing, --help documentation, and type validation. No boilerplate needed!
 
 ```shady
-# Default values make parameters optional
-public serve $port: int (8080, option) =
-  echo ("Starting server on port " + to_string $port);
+# Deploy to environment (required parameters)
+public deploy $env: str $version: str =
+  seq [
+    echo ("Deploying version " + $version + " to " + $env);
+    git fetch --tags;
+    git checkout $version;
+    cargo build --release;
+    echo "Deployment complete!";
+  ];
 
-# Multiple optional parameters with sensible defaults
-public docker-build $name: str $tag: str ("latest", option) =
-  echo ("Building " + $name + " with tag " + $tag);
+# Start server (optional parameters with defaults)
+public serve $port: int (8080, option) =
+  echo ("Starting server on localhost:" + to_string $port);
+
+# Backup with boolean flag
+public backup $source: str $dest: str = exec (tar czf $dest $source);
 ```
 
-Use from the command line:
+Shady automatically generates a complete CLI with --help:
 
 ```bash
-# Use defaults
-./script.shady serve
-# Starting server on localhost:8080
+$ ./deploy.shady --help
+Usage: deploy.shady <COMMAND>
 
-# Override specific options
-./script.shady serve --port 3000 --host "0.0.0.0"
-# Starting server on 0.0.0.0:3000
+Commands:
+  deploy
+  serve
+  backup
+  help     Print this message or the help of the given subcommand(s)
 
-# Required and optional parameters
-./script.shady docker-build myapp --tag "v1.2.3"
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+$ ./deploy.shady serve --help
+Usage: deploy.shady serve [OPTIONS]
+
+Options:
+      --port <port>  [default: 8080]
+  -h, --help         Print help
+
+$ ./deploy.shady serve --port 3000
+Starting server on localhost:3000
+
+$ ./deploy.shady backup /data /backup.tar.gz
+# Creates compressed tarball
 ```
 
 ### Recursion and Private Functions
@@ -468,26 +516,54 @@ public sum-and-double $nums: [int] -> int =
   reduce (lambda $acc $x -> $acc + $x * 2) 0 $nums;
 ```
 
-## IDE Support
+## Batteries Included: Complete Tooling
 
-Shady includes a Language Server Protocol (LSP) implementation for enhanced IDE integration:
+Shady provides a complete development experience out of the box:
 
-- **Auto-completion**: Context-aware suggestions for functions, variables, and types
-- **Signature Help**: Real-time parameter hints while typing function calls
-- **Go to Definition**: Jump to function definitions
-- **Type Checking**: Real-time type error detection
-- **Hover Information**: Type information on hover
+### Static Type Checker
 
-The LSP automatically discovers all builtins (including user-defined ones via macros), so IDE features stay in sync with language extensions.
+Catch errors before execution with built-in type analysis:
+
+```bash
+$ shady typecheck my-script.shady
+✓ Type checking passed
+
+# Or check types while developing with LSP integration
+```
+
+### LSP Server
+
+Full IDE support through Language Server Protocol:
+
+- **Auto-completion**: Context-aware suggestions for functions, variables, types
+- **Signature Help**: Real-time parameter hints while typing
+- **Go to Definition**: Jump to function and variable definitions
+- **Real-time Type Checking**: See type errors as you code
+- **Hover Information**: Type and documentation on hover
+
+The LSP automatically discovers all builtins (including user-defined macros), keeping IDE features synchronized with language extensions.
+
+### Auto-Formatter
+
+Maintain consistent code style automatically:
+
+```bash
+$ shady format my-script.shady
+# Formats code with configurable line length and indentation
+
+# Or use format-on-save in your editor via LSP
+```
+
+The formatter intelligently wraps long expressions and maintains 70-character lines for readability.
 
 ## Planned Features
 
-- Variadic functions
-- Optional function parameters (beyond default values)
-- Stream support for builtins and local functions
-- Enhanced error messages with miette
+- Variadic functions (rest parameters)
+- Enhanced error messages with miette integration
 - Advanced I/O redirection from seq blocks
+- Pattern matching for structured data
 - More comprehensive standard library
+- Package manager for sharing scripts
 
 ## Development
 
