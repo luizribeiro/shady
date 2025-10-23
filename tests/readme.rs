@@ -180,6 +180,7 @@ fn test_readme_code_block_count() {
 }
 
 #[test]
+#[ignore] // README examples use manual 70-char line wrapping for readability
 fn test_readme_code_blocks_are_formatted() {
     let blocks = extract_shady_code_blocks();
     let mut unformatted_blocks = Vec::new();
@@ -218,6 +219,51 @@ fn test_readme_code_blocks_are_formatted() {
             ));
         }
         error_msg.push_str("\nRun the formatter on these blocks to fix them.\n");
+        panic!("{}", error_msg);
+    }
+}
+
+#[test]
+fn test_readme_code_blocks_line_length() {
+    let blocks = extract_shady_code_blocks();
+    let max_line_length = 70;
+    let mut long_line_blocks = Vec::new();
+
+    for (line_num, code) in &blocks {
+        if should_skip_block(code) {
+            continue;
+        }
+
+        let mut long_lines = Vec::new();
+        for (i, line) in code.lines().enumerate() {
+            if line.len() > max_line_length {
+                long_lines.push((i + 1, line.len(), line.to_string()));
+            }
+        }
+
+        if !long_lines.is_empty() {
+            long_line_blocks.push((*line_num, long_lines));
+        }
+    }
+
+    if !long_line_blocks.is_empty() {
+        let mut error_msg = format!(
+            "\n\nThe following README code blocks have lines longer than {} characters:\n",
+            max_line_length
+        );
+        for (block_line, long_lines) in long_line_blocks {
+            error_msg.push_str(&format!("\n--- Block at line {} ---\n", block_line));
+            for (line_num, length, line) in long_lines {
+                error_msg.push_str(&format!(
+                    "  Line {}: {} chars: {}\n",
+                    line_num, length, line
+                ));
+            }
+        }
+        error_msg.push_str(&format!(
+            "\nPlease wrap these lines to {} characters or less.\n",
+            max_line_length
+        ));
         panic!("{}", error_msg);
     }
 }
