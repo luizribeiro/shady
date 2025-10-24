@@ -51,7 +51,7 @@ fn bench_chained_pipes(c: &mut Criterion) {
     group.bench_function(BenchmarkId::new("pipes", 3), |b| {
         b.iter(|| {
             let script =
-                r#"public main = exec (echo "sodium" > sed "s/o/a/g" > tr -d "\n");"#;
+                r#"public main = exec (echo "sodium" > sed "s/o/a/g" > awk '{printf $0}');"#;
             let output = run_shady_script(black_box(script), &[]);
             assert!(output.status.success());
         });
@@ -61,7 +61,7 @@ fn bench_chained_pipes(c: &mut Criterion) {
     group.bench_function(BenchmarkId::new("pipes", 4), |b| {
         b.iter(|| {
             let script =
-                r#"public main = exec (echo "sodium" > sed "s/o/a/g" > tr -d "\n" > cat);"#;
+                r#"public main = exec (echo "sodium" > sed "s/o/a/g" > awk '{printf $0}' > cat);"#;
             let output = run_shady_script(black_box(script), &[]);
             assert!(output.status.success());
         });

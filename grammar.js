@@ -128,6 +128,7 @@ module.exports = grammar({
     value: $ => choice(
       $.int,
       $.str,
+      $.raw_str,
       $.bool,
     ),
 
@@ -158,6 +159,23 @@ module.exports = grammar({
       field('expr', $.expr),
       '}',
     ),
+
+    // Raw strings (single quotes) - no interpolation
+    raw_str: $ => seq(
+      "'",
+      repeat(choice(
+        $.raw_string_content,
+        $.raw_escape_sequence,
+      )),
+      "'",
+    ),
+
+    raw_string_content: $ => token.immediate(prec(1, /[^'\\]+/)),
+
+    raw_escape_sequence: $ => token.immediate(seq(
+      '\\',
+      /['\\/]/,
+    )),
 
     bool: $ => choice('true', 'false'),
 

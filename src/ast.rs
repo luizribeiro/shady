@@ -396,7 +396,7 @@ fn parse_call(node: Node, source: &[u8]) -> Expr {
 
 fn parse_fn_arg(node: Node, source: &[u8]) -> Expr {
     match node.kind() {
-        "value" | "int" | "str" | "bool" => {
+        "value" | "int" | "str" | "bool" | "raw_str" => {
             let span = Span::from_node(&node);
             Expr::Value(parse_value(node, source), span)
         }
@@ -485,8 +485,42 @@ fn parse_value(node: Node, source: &[u8]) -> Value {
                 .parse()
                 .expect("bool parse error"),
         ),
+        "raw_str" => {
+            let text = node_text(&value_node, source);
+            Value::Str(unescape_raw_string(text))
+        }
         _ => unreachable!("unknown value type: {}", value_node.kind()),
     }
+}
+
+/// Unescape a raw string (single-quoted).
+/// Raw strings only support minimal escape sequences: \', \\, and \/
+fn unescape_raw_string(s: &str) -> String {
+    // Remove surrounding quotes
+    let s = s.trim_start_matches('\'').trim_end_matches('\'');
+
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('\'') => result.push('\''),
+                Some('\\') => result.push('\\'),
+                Some('/') => result.push('/'),
+                Some(other) => {
+                    // In raw strings, unrecognized escapes are kept as-is
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => result.push('\\'),
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
 }
 
 fn parse_variable(node: Node, source: &[u8]) -> Expr {
@@ -562,7 +596,7 @@ fn parse_lambda(node: Node, source: &[u8]) -> Expr {
 fn parse_expr(node: Node, source: &[u8]) -> Expr {
     match node.kind() {
         // Primary expressions
-        "int" | "bool" => {
+        "int" | "bool" | "raw_str" => {
             let span = Span::from_node(&node);
             Expr::Value(parse_value(node, source), span)
         }
@@ -1613,6 +1647,27 @@ mod tests {
                 ],
                 span: dummy_span(),
             },
+        ),
+        // Raw string tests (single quotes, no interpolation)
+        parse_raw_str_simple: (
+            "main = 'hello';",
+            Expr::Value(Value::Str("hello".to_string()), dummy_span())
+        ),
+        parse_raw_str_with_curly_braces: (
+            "main = 'hello {world}';",
+            Expr::Value(Value::Str("hello {world}".to_string()), dummy_span())
+        ),
+        parse_raw_str_with_escape_quote: (
+            "main = 'it\\'s working';",
+            Expr::Value(Value::Str("it's working".to_string()), dummy_span())
+        ),
+        parse_raw_str_with_escape_backslash: (
+            "main = 'path\\\\to\\\\file';",
+            Expr::Value(Value::Str("path\\to\\file".to_string()), dummy_span())
+        ),
+        parse_raw_str_with_awk_syntax: (
+            "main = '{printf $0}';",
+            Expr::Value(Value::Str("{printf $0}".to_string()), dummy_span())
         ),
     }
 
