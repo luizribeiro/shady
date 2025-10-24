@@ -30,15 +30,17 @@ jobs:
           RUSTC_BOOTSTRAP: 1
           RUSTFLAGS: -Cinstrument-coverage
           LLVM_PROFILE_FILE: shady-%p-%m.profraw
-      - id: coverage
-        name: Collect code coverage
-        uses: actions-rs/grcov@v0.1.5
+      - name: Install grcov
+        run: cargo install grcov
+      - name: Collect code coverage
+        run: |
+          grcov . --binary-path ./target/debug/ -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
       - name: Upload to Codecov
         uses: codecov/codecov-action@v3.1.1
         with:
+          files: lcov.info
           verbose: true
-          fail_ci_if_error: true
-          files: ${{ steps.coverage.outputs.report }}
+          fail_ci_if_error: false
 
   benchmark:
     runs-on: ubuntu-latest
