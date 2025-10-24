@@ -31,24 +31,35 @@ fn seq(procs: Vec<Proc>) -> Result<i64> {
 }
 
 #[builtin]
-fn stdout(mut proc: Proc) -> Result<String> {
+fn stdout(proc: Proc) -> Result<String> {
     // Close stdin immediately - stdout capture doesn't need terminal input
     drop(proc.stdin_writer);
 
     // Discard stderr by not redirecting it
     drop(proc.stderr_reader);
 
-    // Read all stdout
-    let mut output = String::new();
-    proc.stdout_reader
-        .read_to_string(&mut output)
-        .map_err(|e| ShadyError::IoError(format!("failed to read stdout: {}", e)))?;
+    // Spawn a thread to read stdout concurrently while waiting for processes
+    // This prevents deadlock in multi-process pipelines where processes may be
+    // blocked on full pipe buffers waiting for the reader to drain output
+    let mut stdout_reader = proc.stdout_reader;
+    let read_thread = thread::spawn(move || {
+        let mut output = String::new();
+        stdout_reader
+            .read_to_string(&mut output)
+            .map_err(|e| ShadyError::IoError(format!("failed to read stdout: {}", e)))?;
+        Ok::<String, ShadyError>(output)
+    });
 
     // Wait for ALL processes in the pipeline to complete
     for child in &proc.pipeline_children {
         child.borrow_mut().wait()?;
     }
     proc.child.borrow_mut().wait()?;
+
+    // Get the output from the reader thread
+    let output = read_thread
+        .join()
+        .map_err(|_| ShadyError::ThreadPanic)??;
 
     Ok(output)
 }
