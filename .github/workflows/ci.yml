@@ -28,7 +28,7 @@ jobs:
         env:
           CARGO_INCREMENTAL: 0
           RUSTC_BOOTSTRAP: 1
-          RUSTFLAGS: -Cinstrument-coverage -Zprofile
+          RUSTFLAGS: -Cinstrument-coverage
           LLVM_PROFILE_FILE: shady-%p-%m.profraw
       - id: coverage
         name: Collect code coverage
