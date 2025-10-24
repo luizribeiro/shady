@@ -56,4 +56,4 @@ jobs:
       - name: Build benchmarks
         run: devenv shell cargo bench --no-run
       - name: Run benchmarks
-        run: devenv shell cargo bench -- --output-format bencher
+        run: devenv shell cargo bench --bench proc_pipes -- --output-format bencher

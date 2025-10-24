@@ -57,9 +57,7 @@ fn stdout(proc: Proc) -> Result<String> {
     proc.child.borrow_mut().wait()?;
 
     // Get the output from the reader thread
-    let output = read_thread
-        .join()
-        .map_err(|_| ShadyError::ThreadPanic)??;
+    let output = read_thread.join().map_err(|_| ShadyError::ThreadPanic)??;
 
     Ok(output)
 }
