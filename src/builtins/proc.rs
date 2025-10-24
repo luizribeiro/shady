@@ -32,17 +32,23 @@ fn seq(procs: Vec<Proc>) -> Result<i64> {
 
 #[builtin]
 fn stdout(mut proc: Proc) -> Result<String> {
-    let stdin_thread = redirect(io::stdin(), proc.stdin_writer);
-    let stderr_thread = redirect(proc.stderr_reader, io::stderr());
-    let mut output = String::new();
+    // Close stdin immediately - stdout capture doesn't need terminal input
+    drop(proc.stdin_writer);
 
-    if !atty::is(atty::Stream::Stdin) {
-        stdin_thread.join().map_err(|_| ShadyError::ThreadPanic)?;
-    }
+    // Discard stderr by not redirecting it
+    drop(proc.stderr_reader);
+
+    // Read all stdout
+    let mut output = String::new();
     proc.stdout_reader
         .read_to_string(&mut output)
         .map_err(|e| ShadyError::IoError(format!("failed to read stdout: {}", e)))?;
-    stderr_thread.join().map_err(|_| ShadyError::ThreadPanic)?;
+
+    // Wait for ALL processes in the pipeline to complete
+    for child in &proc.pipeline_children {
+        child.borrow_mut().wait()?;
+    }
+    proc.child.borrow_mut().wait()?;
 
     Ok(output)
 }
@@ -63,6 +69,11 @@ fn pipe_stdout(a: Proc, b: Proc) -> Result<Proc> {
         .map_err(|e| ShadyError::PipeCloneError(format!("failed to clone stderr pipe: {}", e)))?;
     redirect(a.stderr_reader, stderr_writer_clone);
     redirect(b.stderr_reader, stderr_writer);
+    // Collect all children from both processes for proper cleanup
+    let mut pipeline_children = a.pipeline_children.clone();
+    pipeline_children.push(a.child.clone());
+    pipeline_children.extend(b.pipeline_children.clone());
+
     Ok(Proc {
         child: b.child,
         program: "".to_string(),
@@ -70,6 +81,7 @@ fn pipe_stdout(a: Proc, b: Proc) -> Result<Proc> {
         stdin_writer: a.stdin_writer,
         stdout_reader: b.stdout_reader,
         stderr_reader,
+        pipeline_children,
     })
 }
 
@@ -107,7 +119,7 @@ where
 {
     // TODO: move to async I/O instead of threading
     thread::spawn(move || {
-        io::copy(&mut a, &mut b)
-            .expect("I/O copy failed in redirect thread - this may indicate a broken pipe or system I/O error");
+        // Ignore errors - broken pipes are expected when processes terminate
+        let _ = io::copy(&mut a, &mut b);
     })
 }

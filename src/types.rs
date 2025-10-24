@@ -90,6 +90,8 @@ pub struct Proc {
     pub stdin_writer: os_pipe::PipeWriter,
     pub stdout_reader: os_pipe::PipeReader,
     pub stderr_reader: os_pipe::PipeReader,
+    // Track all children in a pipeline (for proper cleanup)
+    pub pipeline_children: Vec<Rc<RefCell<std::process::Child>>>,
 }
 
 impl Eq for Proc {}
@@ -109,6 +111,7 @@ impl Clone for Proc {
             stderr_reader: self.stderr_reader.try_clone().expect(
                 "Failed to clone stderr pipe - this is likely a system resource limit issue",
             ),
+            pipeline_children: self.pipeline_children.clone(),
         }
     }
 }
