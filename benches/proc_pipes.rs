@@ -51,7 +51,7 @@ fn bench_chained_pipes(c: &mut Criterion) {
     group.bench_function(BenchmarkId::new("pipes", 3), |b| {
         b.iter(|| {
             let script =
-                r#"public main = exec (echo "sodium" > sed "s/o/a/g" > awk "{printf $0}");"#;
+                r#"public main = exec (echo "sodium" > sed "s/o/a/g" > tr -d "\n");"#;
             let output = run_shady_script(black_box(script), &[]);
             assert!(output.status.success());
         });
@@ -61,7 +61,7 @@ fn bench_chained_pipes(c: &mut Criterion) {
     group.bench_function(BenchmarkId::new("pipes", 4), |b| {
         b.iter(|| {
             let script =
-                r#"public main = exec (echo "sodium" > sed "s/o/a/g" > awk "{printf $0}" > cat);"#;
+                r#"public main = exec (echo "sodium" > sed "s/o/a/g" > tr -d "\n" > cat);"#;
             let output = run_shady_script(black_box(script), &[]);
             assert!(output.status.success());
         });
@@ -75,7 +75,7 @@ fn bench_stdout_capture(c: &mut Criterion) {
     c.bench_function("stdout_capture", |b| {
         b.iter(|| {
             let script = r#"
-                result = stdout (echo "sodium" > sed "s/o/a/g");
+                result = stdout ((echo "sodium") > (sed "s/o/a/g"));
                 public main = exec (echo (result));
             "#;
             let output = run_shady_script(black_box(script), &[]);
@@ -89,7 +89,7 @@ fn bench_stdout_capture_with_concat(c: &mut Criterion) {
     c.bench_function("stdout_capture_concat", |b| {
         b.iter(|| {
             let script = r#"
-                this_host = stdout (echo "sodium" > sed "s/o/a/g");
+                this_host = stdout ((echo "sodium") > (sed "s/o/a/g"));
                 public main = exec (echo ("pre" + (this_host) + "post"));
             "#;
             let output = run_shady_script(black_box(script), &[]);
